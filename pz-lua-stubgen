@@ -1,2 +1,2 @@
 #!/usr/bin/env bash
-node build/main.js "$@"
+node $(dirname "$0")/build/main.js "$@"

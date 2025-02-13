@@ -1,2 +1,2 @@
 @echo off
-node build/main.js %*
+node %~dp0build\main.js %*

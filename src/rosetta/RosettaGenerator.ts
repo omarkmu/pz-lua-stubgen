@@ -13,9 +13,6 @@ import {
     time,
 } from '../helpers'
 
-const SCHEMA_URL =
-    'https://raw.githubusercontent.com/asledgehammer/PZ-Rosetta-Schema/refs/heads/main/1.1.json'
-
 export class RosettaGenerator extends BaseAnnotator {
     protected rosettaFormat: 'json' | 'yml'
 
@@ -73,25 +70,22 @@ export class RosettaGenerator extends BaseAnnotator {
             )
         }
 
-        const data: any = {}
-        const format = this.rosettaFormat
-        if (format === 'json') {
-            data.$schema = SCHEMA_URL
+        const data: any = {
+            version: '1.1',
+            languages: {
+                lua: luaData,
+            },
         }
-
-        data.version = '1.1'
-        data.languages = { lua: luaData }
 
         let out: string
+        const format = this.rosettaFormat
         if (format === 'json') {
-            out = JSON.stringify(data, undefined, 2) + '\n'
+            out = JSON.stringify(data, undefined, 2)
         } else {
-            const yml = YAML.stringify(data)
-
-            out = `#yaml-language-server: $schema=${SCHEMA_URL}\n${yml}`
+            out = YAML.stringify(data)
         }
 
-        return out.replaceAll('\r', '')
+        return out.replaceAll('\r', '') + '\n'
     }
 
     async run() {

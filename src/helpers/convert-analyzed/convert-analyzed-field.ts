@@ -3,14 +3,21 @@ import { RosettaField } from '../../rosetta'
 import { expressionToDefaultValue } from '../expression-to-default-value'
 import { removeUndefinedOrEmpty } from '../remove-undefined-or-empty'
 import { convertAnalyzedTypes } from './convert-analyzed-types'
+import { getHeuristicTypes } from './get-heuristic-types'
 
 export const convertAnalyzedField = (
     field: AnalyzedField,
     mergeField?: RosettaField,
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): RosettaField => {
     const rosettaField: RosettaField = {}
-    const [types, nullable] = convertAnalyzedTypes(field.types)
+
+    const fieldTypes = applyHeuristics
+        ? getHeuristicTypes(field.name, field.types)
+        : field.types
+
+    const [type, nullable] = convertAnalyzedTypes(fieldTypes)
 
     let hasValue = false
     let defaultValue: string | undefined
@@ -26,11 +33,14 @@ export const convertAnalyzedField = (
     }
 
     if (mergeField && keepTypes) {
-        rosettaField.type = mergeField?.type
+        rosettaField.type =
+            mergeField.type ??
+            (!hasValue || mergeField.nullable ? type : undefined)
+
         rosettaField.nullable = mergeField.nullable
     } else {
-        if (types && (!hasValue || nullable)) {
-            rosettaField.type = types
+        if (type && (!hasValue || nullable)) {
+            rosettaField.type = type
         }
 
         if (nullable) {

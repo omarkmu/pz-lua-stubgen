@@ -6,9 +6,15 @@ export const convertAnalyzedFunctions = (
     functions: AnalyzedFunction[],
     mergeFunctions?: Record<string, RosettaFunction>,
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): RosettaFunction[] => {
     const converted = functions.map((x) =>
-        convertAnalyzedFunction(x, mergeFunctions?.[x.name], keepTypes),
+        convertAnalyzedFunction(
+            x,
+            mergeFunctions?.[x.name],
+            keepTypes,
+            applyHeuristics,
+        ),
     )
 
     if (!mergeFunctions) {

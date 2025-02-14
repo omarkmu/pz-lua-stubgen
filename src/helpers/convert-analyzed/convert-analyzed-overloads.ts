@@ -6,6 +6,7 @@ import { convertAnalyzedReturns } from './convert-analyzed-returns'
 export const convertAnalyzedOverloads = (
     overloads: AnalyzedFunction[],
     mergeOverloads?: RosettaOverload[],
+    applyHeuristics?: boolean,
 ): RosettaOverload[] => {
     if (mergeOverloads) {
         return mergeOverloads
@@ -15,7 +16,12 @@ export const convertAnalyzedOverloads = (
         const overload: RosettaOverload = {}
 
         if (x.parameters.length > 0) {
-            overload.parameters = convertAnalyzedParameters(x.parameters)
+            overload.parameters = convertAnalyzedParameters(
+                x.parameters,
+                undefined,
+                false,
+                applyHeuristics,
+            )
         }
 
         if (x.returnTypes.length > 0) {

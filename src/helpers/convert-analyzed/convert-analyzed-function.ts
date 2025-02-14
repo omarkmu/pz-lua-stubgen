@@ -8,6 +8,7 @@ export const convertAnalyzedFunction = (
     func: AnalyzedFunction,
     mergeFunc?: RosettaFunction,
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): RosettaFunction => {
     const rosettaFunc: RosettaFunction = {
         name: func.name,
@@ -18,6 +19,7 @@ export const convertAnalyzedFunction = (
             func.parameters,
             mergeFunc?.parameters,
             keepTypes,
+            applyHeuristics,
         ),
         return: convertAnalyzedReturns(
             func.returnTypes,

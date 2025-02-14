@@ -9,6 +9,7 @@ export const convertAnalyzedTable = (
     table: AnalyzedTable,
     mergeTable?: RosettaTable,
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): WritableRosettaTable => {
     const rosettaTable: WritableRosettaTable = {
         name: table.name,
@@ -21,21 +22,25 @@ export const convertAnalyzedTable = (
             table.staticFields,
             mergeTable?.staticFields,
             keepTypes,
+            applyHeuristics,
         ),
         overloads: convertAnalyzedOverloads(
             table.overloads,
             mergeTable?.overloads,
+            applyHeuristics,
         ),
         operators: mergeTable?.operators,
         methods: convertAnalyzedFunctions(
             table.methods,
             mergeTable?.methods,
             keepTypes,
+            applyHeuristics,
         ),
         staticMethods: convertAnalyzedFunctions(
             table.functions,
             mergeTable?.staticMethods,
             keepTypes,
+            applyHeuristics,
         ),
     }
 

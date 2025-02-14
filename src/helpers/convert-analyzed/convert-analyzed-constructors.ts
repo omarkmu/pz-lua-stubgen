@@ -6,6 +6,7 @@ export const convertAnalyzedConstructors = (
     constructors: AnalyzedFunction[],
     mergeConstructors?: RosettaConstructor[],
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): RosettaConstructor[] => {
     const converted = constructors.map((x, i): RosettaConstructor => {
         const cons: RosettaConstructor = {}
@@ -24,6 +25,7 @@ export const convertAnalyzedConstructors = (
                 x.parameters,
                 mergeCons?.parameters,
                 keepTypes,
+                applyHeuristics,
             )
         } else if (mergeCons?.parameters && mergeCons.parameters.length > 0) {
             cons.parameters = mergeCons.parameters

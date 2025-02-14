@@ -33,6 +33,7 @@ export class RosettaGenerator extends BaseAnnotator {
                 cls,
                 rosettaFile?.classes[cls.name],
                 this.keepTypes,
+                this.heuristics,
             )
 
             delete converted.name
@@ -45,6 +46,7 @@ export class RosettaGenerator extends BaseAnnotator {
                 table,
                 rosettaFile?.tables[table.name],
                 this.keepTypes,
+                this.heuristics,
             )
 
             delete converted.name
@@ -65,6 +67,7 @@ export class RosettaGenerator extends BaseAnnotator {
                 mod.functions,
                 rosettaFile?.functions,
                 this.keepTypes,
+                this.heuristics,
             )
         }
 
@@ -73,6 +76,7 @@ export class RosettaGenerator extends BaseAnnotator {
                 mod.fields,
                 rosettaFile?.fields,
                 this.keepTypes,
+                this.heuristics,
             )
         }
 

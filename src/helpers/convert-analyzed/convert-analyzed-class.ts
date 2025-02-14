@@ -10,6 +10,7 @@ export const convertAnalyzedClass = (
     cls: AnalyzedClass,
     mergeCls?: RosettaClass,
     keepTypes?: boolean,
+    applyHeuristics?: boolean,
 ): WritableRosettaClass => {
     const rosettaCls: WritableRosettaClass = {
         name: cls.name,
@@ -23,24 +24,37 @@ export const convertAnalyzedClass = (
             cls.constructors,
             mergeCls?.constructors,
             keepTypes,
+            applyHeuristics,
         ),
         staticFields: convertAnalyzedFields(
             [...cls.staticFields, ...cls.setterFields],
             mergeCls?.staticFields,
             keepTypes,
+            applyHeuristics,
         ),
-        fields: convertAnalyzedFields(cls.fields, mergeCls?.fields, keepTypes),
-        overloads: convertAnalyzedOverloads(cls.overloads, mergeCls?.overloads),
+        fields: convertAnalyzedFields(
+            cls.fields,
+            mergeCls?.fields,
+            keepTypes,
+            applyHeuristics,
+        ),
+        overloads: convertAnalyzedOverloads(
+            cls.overloads,
+            mergeCls?.overloads,
+            applyHeuristics,
+        ),
         operators: mergeCls?.operators,
         methods: convertAnalyzedFunctions(
             cls.methods,
             mergeCls?.methods,
             keepTypes,
+            applyHeuristics,
         ),
         staticMethods: convertAnalyzedFunctions(
             [...cls.functions, ...cls.functionConstructors],
             mergeCls?.staticMethods,
             keepTypes,
+            applyHeuristics,
         ),
     }
 

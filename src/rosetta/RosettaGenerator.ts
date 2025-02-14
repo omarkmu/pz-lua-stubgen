@@ -15,10 +15,12 @@ import {
 
 export class RosettaGenerator extends BaseAnnotator {
     protected rosettaFormat: 'json' | 'yml'
+    protected keepTypes: boolean
 
     constructor(args: RosettaGenerateArgs) {
         super(args)
 
+        this.keepTypes = args.keepTypes ?? false
         this.rosettaFormat = args.format ?? 'yml'
     }
 
@@ -30,6 +32,7 @@ export class RosettaGenerator extends BaseAnnotator {
             const converted: any = convertAnalyzedClass(
                 cls,
                 rosettaFile?.classes[cls.name],
+                this.keepTypes,
             )
 
             delete converted.name
@@ -41,6 +44,7 @@ export class RosettaGenerator extends BaseAnnotator {
             const converted: any = convertAnalyzedTable(
                 table,
                 rosettaFile?.tables[table.name],
+                this.keepTypes,
             )
 
             delete converted.name
@@ -60,6 +64,7 @@ export class RosettaGenerator extends BaseAnnotator {
             luaData.functions = convertAnalyzedFunctions(
                 mod.functions,
                 rosettaFile?.functions,
+                this.keepTypes,
             )
         }
 
@@ -67,6 +72,7 @@ export class RosettaGenerator extends BaseAnnotator {
             luaData.fields = convertAnalyzedFields(
                 mod.fields,
                 rosettaFile?.fields,
+                this.keepTypes,
             )
         }
 
@@ -85,7 +91,7 @@ export class RosettaGenerator extends BaseAnnotator {
             out = YAML.stringify(data)
         }
 
-        return out.replaceAll('\r', '') + '\n'
+        return out.replaceAll('\r', '').trimEnd() + '\n'
     }
 
     async run() {

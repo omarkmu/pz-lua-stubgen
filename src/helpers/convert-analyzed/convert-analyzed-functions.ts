@@ -5,9 +5,10 @@ import { convertAnalyzedFunction } from './convert-analyzed-function'
 export const convertAnalyzedFunctions = (
     functions: AnalyzedFunction[],
     mergeFunctions?: Record<string, RosettaFunction>,
+    keepTypes?: boolean,
 ): RosettaFunction[] => {
     const converted = functions.map((x) =>
-        convertAnalyzedFunction(x, mergeFunctions?.[x.name]),
+        convertAnalyzedFunction(x, mergeFunctions?.[x.name], keepTypes),
     )
 
     if (!mergeFunctions) {

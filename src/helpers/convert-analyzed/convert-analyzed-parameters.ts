@@ -5,9 +5,10 @@ import { convertAnalyzedParameter } from './convert-analyzed-parameter'
 export const convertAnalyzedParameters = (
     params: AnalyzedParameter[],
     mergeParams?: RosettaParameter[],
+    keepTypes?: boolean,
 ): RosettaParameter[] => {
     const converted = params.map((x, i) =>
-        convertAnalyzedParameter(x, mergeParams?.[i]),
+        convertAnalyzedParameter(x, mergeParams?.[i], keepTypes),
     )
 
     if (mergeParams && params.length < mergeParams.length) {

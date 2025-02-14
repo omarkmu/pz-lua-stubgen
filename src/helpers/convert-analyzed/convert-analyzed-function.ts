@@ -7,24 +7,25 @@ import { convertAnalyzedReturns } from './convert-analyzed-returns'
 export const convertAnalyzedFunction = (
     func: AnalyzedFunction,
     mergeFunc?: RosettaFunction,
+    keepTypes?: boolean,
 ): RosettaFunction => {
-    const rosettaFunc: RosettaFunction = { name: func.name }
-
-    rosettaFunc.deprecated = mergeFunc?.deprecated
-    rosettaFunc.notes = mergeFunc?.notes
-    rosettaFunc.tags = mergeFunc?.tags
-
-    rosettaFunc.parameters = convertAnalyzedParameters(
-        func.parameters,
-        mergeFunc?.parameters,
-    )
-
-    rosettaFunc.return = convertAnalyzedReturns(
-        func.returnTypes,
-        mergeFunc?.return,
-    )
-
-    rosettaFunc.overloads = mergeFunc?.overloads
+    const rosettaFunc: RosettaFunction = {
+        name: func.name,
+        deprecated: mergeFunc?.deprecated,
+        notes: mergeFunc?.notes,
+        tags: mergeFunc?.tags,
+        parameters: convertAnalyzedParameters(
+            func.parameters,
+            mergeFunc?.parameters,
+            keepTypes,
+        ),
+        return: convertAnalyzedReturns(
+            func.returnTypes,
+            mergeFunc?.return,
+            keepTypes,
+        ),
+        overloads: mergeFunc?.overloads,
+    }
 
     return removeUndefinedOrEmpty(rosettaFunc)
 }

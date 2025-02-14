@@ -5,11 +5,12 @@ import { convertAnalyzedField } from './convert-analyzed-field'
 export const convertAnalyzedFields = (
     fields: AnalyzedField[],
     mergeFields?: Record<string, RosettaField>,
+    keepTypes?: boolean,
 ): Record<string, RosettaField> => {
     const converted = fields
         .map((x): [string, RosettaField] => [
             x.name,
-            convertAnalyzedField(x, mergeFields?.[x.name]),
+            convertAnalyzedField(x, mergeFields?.[x.name], keepTypes),
         ])
         .reduce<Record<string, RosettaField>>((rec, value) => {
             rec[value[0]] = value[1]

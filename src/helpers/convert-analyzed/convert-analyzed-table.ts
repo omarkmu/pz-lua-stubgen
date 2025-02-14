@@ -8,40 +8,36 @@ import { convertAnalyzedOverloads } from './convert-analyzed-overloads'
 export const convertAnalyzedTable = (
     table: AnalyzedTable,
     mergeTable?: RosettaTable,
+    keepTypes?: boolean,
 ): WritableRosettaTable => {
-    const rosettaTable: WritableRosettaTable = { name: table.name }
-
-    rosettaTable.deprecated = mergeTable?.deprecated
-    rosettaTable.mutable = mergeTable?.mutable
-
-    if (table.local) {
-        rosettaTable.local = true
+    const rosettaTable: WritableRosettaTable = {
+        name: table.name,
+        deprecated: mergeTable?.deprecated,
+        mutable: mergeTable?.mutable,
+        local: table.local ? true : undefined,
+        notes: mergeTable?.notes,
+        tags: mergeTable?.tags,
+        staticFields: convertAnalyzedFields(
+            table.staticFields,
+            mergeTable?.staticFields,
+            keepTypes,
+        ),
+        overloads: convertAnalyzedOverloads(
+            table.overloads,
+            mergeTable?.overloads,
+        ),
+        operators: mergeTable?.operators,
+        methods: convertAnalyzedFunctions(
+            table.methods,
+            mergeTable?.methods,
+            keepTypes,
+        ),
+        staticMethods: convertAnalyzedFunctions(
+            table.functions,
+            mergeTable?.staticMethods,
+            keepTypes,
+        ),
     }
-
-    rosettaTable.notes = mergeTable?.notes
-    rosettaTable.tags = mergeTable?.tags
-
-    rosettaTable.staticFields = convertAnalyzedFields(
-        table.staticFields,
-        mergeTable?.staticFields,
-    )
-
-    rosettaTable.overloads = convertAnalyzedOverloads(
-        table.overloads,
-        mergeTable?.overloads,
-    )
-
-    rosettaTable.operators = mergeTable?.operators
-
-    rosettaTable.methods = convertAnalyzedFunctions(
-        table.methods,
-        mergeTable?.methods,
-    )
-
-    rosettaTable.staticMethods = convertAnalyzedFunctions(
-        table.functions,
-        mergeTable?.staticMethods,
-    )
 
     return removeUndefinedOrEmpty(rosettaTable)
 }

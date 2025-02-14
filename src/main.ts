@@ -222,12 +222,16 @@ const updateRosettaCommand = (yargs: yargs.Argv) => {
             type: 'boolean',
             default: true,
             hidden: true,
-            desc: 'Whether unrecognized files and items should be removed',
         })
         .option('no-delete-unknown', {
             type: 'boolean',
             defaultDescription: 'false',
             desc: 'Display warnings for unknown items instead of deleting them',
+        })
+        .option('keep-types', {
+            type: 'boolean',
+            default: 'false',
+            desc: 'If given, currently documented Rosetta types will not be updated',
         })
 
     addExcludeOptions(yargs)

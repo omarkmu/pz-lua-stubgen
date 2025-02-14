@@ -115,10 +115,12 @@ export interface RosettaReturn {
 
 export interface RosettaGenerateArgs extends BaseAnnotateArgs {
     format?: 'json' | 'yml'
+    keepTypes?: boolean
 }
 
 export interface RosettaUpdateArgs extends RosettaGenerateArgs {
     outputDirectory: string
     rosetta?: string
     deleteUnknown?: boolean
+    extraFiles?: string[]
 }

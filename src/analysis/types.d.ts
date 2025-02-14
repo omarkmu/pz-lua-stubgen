@@ -187,15 +187,16 @@ export interface ResolvedScopeItem extends BaseAnalysisItem {
 
     functions: ResolvedFunctionInfo[]
 
-    returns: ResolvedReturnInfo[]
+    returns?: ResolvedReturnInfo[]
 
     requires: ResolvedRequireInfo[]
 
     seenClasses: Set<string>
 }
 
-export interface ResolvedModule extends ResolvedScopeItem {
+export interface ResolvedModule extends Omit<ResolvedScopeItem, 'returns'> {
     scope: LuaScope
+    returns: ResolvedReturnInfo[]
 }
 
 export interface PartialItem extends BaseAnalysisItem {

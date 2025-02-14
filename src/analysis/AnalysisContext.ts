@@ -338,7 +338,10 @@ export class AnalysisContext {
         const requires: ResolvedRequireInfo[] = []
         const seenClasses = new Set<string>()
 
+        let hasReturn = false
         for (const item of scope.items) {
+            hasReturn ||= item.type === 'returns'
+
             switch (item.type) {
                 case 'partial':
                     if (item.classInfo) {
@@ -367,6 +370,10 @@ export class AnalysisContext {
                     item.classes.forEach((x) => classes.push(x))
                     item.requires.forEach((x) => requires.push(x))
                 case 'returns':
+                    if (item.returns === undefined) {
+                        break
+                    }
+
                     const funcInfo = this.getFunctionInfo(item.id)
 
                     funcInfo.minReturns = Math.min(
@@ -416,15 +423,18 @@ export class AnalysisContext {
             }
         }
 
-        const funcInfo = this.getFunctionInfo(scope.id)
-        const returns = funcInfo.returnTypes.map(
-            (returnTypes, i): ResolvedReturnInfo => {
-                return {
-                    types: new Set(returnTypes),
-                    expressions: funcInfo.returnExpressions[i] ?? new Set(),
-                }
-            },
-        )
+        let returns: ResolvedReturnInfo[] | undefined
+        if (hasReturn || scope.type !== 'block') {
+            const funcInfo = this.getFunctionInfo(scope.id)
+            returns = funcInfo.returnTypes.map(
+                (returnTypes, i): ResolvedReturnInfo => {
+                    return {
+                        types: new Set(returnTypes),
+                        expressions: funcInfo.returnExpressions[i] ?? new Set(),
+                    }
+                },
+            )
+        }
 
         if (scope.type === 'module') {
             const declaredClasses = new Set<string>()

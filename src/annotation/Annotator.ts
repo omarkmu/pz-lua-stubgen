@@ -664,7 +664,7 @@ export class Annotator extends BaseAnnotator {
         const returns = (rosettaFunc as RosettaFunction).return
         if (returns) {
             for (const ret of returns) {
-                if (!ret.type && ret.nullable === undefined) {
+                if (!ret.type && !ret.nullable && !ret.name && !ret.notes) {
                     continue
                 }
 

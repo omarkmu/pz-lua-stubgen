@@ -625,7 +625,10 @@ export class AnalysisContext {
         }
 
         // get lhs types
-        const lhsTypes = [...this.resolveTypes({ expression: lhs })]
+        const lhsTypes = [...this.resolveTypes({ expression: lhs })].filter(
+            (x) => x !== '@instance',
+        )
+
         if (lhsTypes.find((x) => !x.startsWith('@table'))) {
             // non-table lhs → don't treat as instance
             return
@@ -2974,6 +2977,7 @@ export class AnalysisContext {
                 // handle constructors
                 const funcInfo = this.getFunctionInfo(resolvedFunc)
                 if (funcInfo.isConstructor) {
+                    types.add('@instance') // mark as an instance to correctly attribute fields
                     funcInfo.returnTypes[0]?.forEach((x) => types.add(x))
                     break
                 }

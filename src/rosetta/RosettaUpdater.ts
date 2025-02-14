@@ -23,6 +23,7 @@ import {
 export class RosettaUpdater extends RosettaGenerator {
     protected rosettaDir: string
     protected deleteUnknown: boolean
+    protected extraFiles: Set<string>
 
     constructor(args: RosettaUpdateArgs) {
         const rosettaDir = args.rosetta ?? args.outputDirectory
@@ -32,6 +33,7 @@ export class RosettaUpdater extends RosettaGenerator {
 
         this.rosettaDir = rosettaDir
         this.deleteUnknown = args.deleteUnknown ?? true
+        this.extraFiles = new Set(args.extraFiles)
     }
 
     async run() {
@@ -47,7 +49,7 @@ export class RosettaUpdater extends RosettaGenerator {
             log.warn(`No Rosetta data to update; initializing data`)
         }
 
-        await this.writeModules(modules, 'writing data')
+        await this.writeModules(modules, 'rewriting data', this.extraFiles)
 
         const resolvedOutDir = path.resolve(this.outDirectory)
         log.info(
@@ -58,9 +60,11 @@ export class RosettaUpdater extends RosettaGenerator {
     }
 
     protected async update(modules: AnalyzedModule[]) {
-        this.applyExclusions(modules)
-
         for (const mod of modules) {
+            if (this.extraFiles.has(mod.id)) {
+                continue
+            }
+
             const file = this.rosetta.files[mod.id]
             if (!file) {
                 continue
@@ -84,7 +88,7 @@ export class RosettaUpdater extends RosettaGenerator {
 
         const toDelete = new Set<RosettaFile>()
         for (const file of Object.values(this.rosetta.files)) {
-            if (moduleIds.has(file.id)) {
+            if (moduleIds.has(file.id) || this.extraFiles.has(file.id)) {
                 continue
             }
 
@@ -110,7 +114,7 @@ export class RosettaUpdater extends RosettaGenerator {
             }
         }
 
-        this.transformModules(modules)
+        await this.transformModules(modules)
     }
 
     protected updateClasses(mod: AnalyzedModule, file: RosettaFile) {

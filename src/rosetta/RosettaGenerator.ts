@@ -107,12 +107,19 @@ export class RosettaGenerator extends BaseAnnotator {
     protected async writeModules(
         modules: AnalyzedModule[],
         taskName = 'Rosetta initialization',
+        skipIds?: Set<string>,
     ) {
+        skipIds ??= new Set()
+
         await time(taskName, async () => {
             const outDir = this.outDirectory
             const suffix = this.rosettaFormat === 'json' ? '.json' : '.yml'
 
             for (const mod of modules) {
+                if (skipIds.has(mod.id)) {
+                    continue
+                }
+
                 const outFile = path.resolve(
                     path.join(outDir, this.rosettaFormat, mod.id + suffix),
                 )

@@ -233,6 +233,11 @@ const updateRosettaCommand = (yargs: yargs.Argv) => {
             default: 'false',
             desc: 'If given, currently documented Rosetta types will not be updated',
         })
+        .option('extra-files', {
+            type: 'array',
+            string: true,
+            desc: 'List of file identifiers to treat as known files',
+        })
 
     addExcludeOptions(yargs)
 

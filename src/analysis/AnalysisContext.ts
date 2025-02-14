@@ -35,6 +35,7 @@ import {
 
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
 const POS_SIZE_NAMES = new Set(['x', 'y', 'z', 'w', 'h', 'width', 'height'])
+const DX_DY_NAMES = new Set(['dx', 'dy'])
 
 /**
  * Shared context for analysis of multiple Lua files.
@@ -526,23 +527,33 @@ export class AnalysisContext {
         )
 
         if (this.applyHeuristics) {
-            // at least 2 of {x, y, z, w, h, width, height} → assume number
-            const posSizeCount = info.parameterNames.reduce<number>(
-                (x, name) => (POS_SIZE_NAMES.has(name) ? ++x : x),
-                0,
+            const checkNames = info.parameterNames.map((x) =>
+                x.startsWith('_') ? x.slice(1) : x,
             )
 
-            // at least 3 of {r, g, b, a} → assume number
-            const rgbaCount = info.parameterNames.reduce<number>(
-                (x, name) => (RGBA_NAMES.has(name) ? ++x : x),
-                0,
-            )
+            let dxDyCount = 0
+            let posSizeCount = 0
+            let rgbaCount = 0
+
+            for (const name of checkNames) {
+                if (DX_DY_NAMES.has(name)) {
+                    // both of dx, dy → assume number
+                    dxDyCount++
+                } else if (POS_SIZE_NAMES.has(name)) {
+                    // 2+ of {x, y, z, w, h, width, height} → assume number
+                    posSizeCount++
+                } else if (RGBA_NAMES.has(name)) {
+                    // 3+ of {r, g, b, a} → assume number
+                    rgbaCount++
+                }
+            }
 
             for (let i = 0; i < info.parameters.length; i++) {
-                const name = info.parameterNames[i]
+                const name = checkNames[i]
                 const assumeNum =
                     (posSizeCount >= 2 && POS_SIZE_NAMES.has(name)) ||
-                    (rgbaCount >= 3 && RGBA_NAMES.has(name))
+                    (rgbaCount >= 3 && RGBA_NAMES.has(name)) ||
+                    (dxDyCount >= 2 && DX_DY_NAMES.has(name))
 
                 if (assumeNum) {
                     info.parameterTypes[i] ??= new Set()

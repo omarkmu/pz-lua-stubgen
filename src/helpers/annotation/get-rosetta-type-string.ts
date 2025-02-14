@@ -5,11 +5,7 @@ export const getRosettaTypeString = (
 ): string => {
     type = (type ?? 'unknown').trim()
 
-    if (nullable) {
-        type += ' | nil'
-    }
-
-    if (optional) {
+    if (optional || nullable) {
         return type.includes('|') ? `(${type})?` : `${type}?`
     }
 

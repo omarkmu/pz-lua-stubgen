@@ -905,6 +905,35 @@ export class AnalysisContext {
         })
     }
 
+    protected addKnownReturns(
+        expr: LuaExpression,
+        types: Set<string>,
+    ): boolean {
+        if (expr.type !== 'reference') {
+            return false
+        }
+
+        const name = expr.id
+        switch (name) {
+            case 'tonumber':
+                types.add('number')
+                types.add('nil')
+                return true
+
+            case 'getTextOrNull':
+                types.add('string')
+                types.add('nil')
+                return true
+
+            case 'tostring':
+            case 'getText':
+                types.add('string')
+                return true
+        }
+
+        return false
+    }
+
     protected addSeenClasses(scope: LuaScope, expression: LuaExpression) {
         switch (expression.type) {
             case 'literal':
@@ -2988,15 +3017,8 @@ export class AnalysisContext {
                     break
                 }
 
-                if (func.type === 'reference') {
-                    if (func.id === 'tonumber') {
-                        types.add('number')
-                        types.add('nil')
-                        break
-                    } else if (func.id === 'tostring') {
-                        types.add('string')
-                        break
-                    }
+                if (this.addKnownReturns(func, types)) {
+                    break
                 }
 
                 const resolvedFuncTypes = this.resolveTypes(

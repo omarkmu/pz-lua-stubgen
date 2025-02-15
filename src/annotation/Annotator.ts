@@ -143,7 +143,6 @@ export class Annotator extends BaseAnnotator {
         }
 
         const mod = convertRosettaFile(file)
-        mod.prefix = '---@meta _'
 
         // manually set `table.pairs = pairs`
         const tableCls = mod.tables.find((x) => x.name === 'table')
@@ -198,7 +197,7 @@ export class Annotator extends BaseAnnotator {
             writtenCount++
             const rosettaClass = rosettaFile?.classes[cls.name]
             const tags = new Set(rosettaClass?.tags ?? [])
-            const noInitializer = tags.has('NoInitializer')
+            const noInitializer = tags.has('StubGen_NoInitializer')
 
             const identName = this.getSafeIdentifier(cls.name, cls.local)
             const base = rosettaClass?.extends ?? cls.extends
@@ -715,7 +714,7 @@ export class Annotator extends BaseAnnotator {
                 ? this.getSafeIdentifier(table.name)
                 : table.name
 
-            if (!tags.has('NoInitializer')) {
+            if (!tags.has('StubGen_NoInitializer')) {
                 writeNotes(rosettaTable?.notes, out)
                 this.writeRosettaOperators(rosettaTable?.operators, out)
 

@@ -1,10 +1,12 @@
 version: "1.1"
 languages:
   lua:
+    tags:
+      - StubGen_Definitions
     tables:
       __classmetatables: {}
       string:
-        tags: [NoInitializer]
+        tags: [StubGen_NoInitializer]
         staticMethods:
           - name: trim
             parameters:
@@ -37,7 +39,7 @@ languages:
             return:
               - type: boolean
       table:
-        tags: [NoInitializer]
+        tags: [StubGen_NoInitializer]
         staticMethods:
           - name: isempty
             parameters:
@@ -64,10 +66,8 @@ languages:
     classes:
       Reader:
         mutable: false
-        tags: [NoInitializer]
       InputStream:
         mutable: false
-        tags: [NoInitializer]
       Random:
         local: true
         mutable: false
@@ -76,7 +76,7 @@ languages:
             parameters:
               - name: m
                 type: integer?
-              - name: "n"
+              - name: n
                 type: integer?
             return:
               - type: number
@@ -133,7 +133,7 @@ languages:
           - name: loader
             type: string
         return:
-          - type: "(string | function)?"
+          - type: (string | function)?
       - name: newrandom
         return:
           - type: Random

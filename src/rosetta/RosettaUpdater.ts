@@ -92,6 +92,12 @@ export class RosettaUpdater extends RosettaGenerator {
                 continue
             }
 
+            if (file.tags.has('StubGen_Definitions')) {
+                // don't rewrite definition files
+                delete this.rosetta.files[file.id]
+                continue
+            }
+
             const filename = file.filename
             if (!filename || !this.deleteUnknown) {
                 log.warn(`Found unknown file in Rosetta data: '${file.id}'`)

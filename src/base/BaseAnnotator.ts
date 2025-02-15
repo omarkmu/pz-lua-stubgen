@@ -280,6 +280,10 @@ export class BaseAnnotator extends Base {
 
         const idSet = new Set<string>(modules.map((x) => x.id))
         for (const [id, file] of Object.entries(this.rosetta.files)) {
+            if (file.tags.has('StubGen_Declaration')) {
+                continue
+            }
+
             if (!idSet.has(id)) {
                 modules.push(this.createModule(file))
             }

@@ -149,9 +149,30 @@ export class Rosetta {
         if (expectField(data, 'languages.lua.functions', 'array')) {
             for (let i = 0; i < lua.functions.length; i++) {
                 const obj = lua.functions[i]
-                expect(obj, 'object', `function at index ${i}`)
+                expect(obj, 'object', `value at index ${i} of function list`)
 
                 functions[obj.name] = obj
+            }
+        }
+
+        const tags = new Set<string>()
+        if (expectField(data, 'languages.lua.tags', 'array')) {
+            for (let i = 0; i < lua.tags.length; i++) {
+                const tag = lua.tags[i]
+                expect(tag, 'string', `value at index ${i} of tags list`)
+
+                tags.add(tag)
+            }
+        }
+
+        if (tags.has('StubGen_Definitions')) {
+            for (const cls of Object.values(classes)) {
+                if (cls.local) {
+                    continue
+                }
+
+                cls.tags ??= []
+                cls.tags.push('StubGen_NoInitializer')
             }
         }
 
@@ -162,6 +183,7 @@ export class Rosetta {
             tables,
             functions,
             fields,
+            tags,
         }
 
         this.files[id] = file

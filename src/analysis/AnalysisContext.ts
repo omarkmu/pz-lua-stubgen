@@ -1430,12 +1430,30 @@ export class AnalysisContext {
 
         // expect base:derive(...)
         const base = callBase.base
-        if (base.type !== 'reference' || base.id.startsWith('@')) {
+        if (base.type !== 'reference') {
             return
         }
 
+        let id = base.id
+
+        // resolve local variables for global classes
+        if (id.startsWith('@')) {
+            const types = this.resolveTypes({ expression: base })
+            const resolved = [...types][0]
+            if (types.size !== 1 || !resolved.startsWith('@table')) {
+                return
+            }
+
+            const tableInfo = this.getTableInfo(resolved)
+            if (!tableInfo.className) {
+                return
+            }
+
+            id = tableInfo.className
+        }
+
         // found derive; return base class name
-        return [base.id, type]
+        return [id, type]
     }
 
     protected checkFieldCallAssign(

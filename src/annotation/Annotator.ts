@@ -55,6 +55,8 @@ export class Annotator extends BaseAnnotator {
 
         const rosettaFile = this.rosetta.files[mod.id]
 
+        this.writeAliases(out, rosettaFile)
+
         if (this.writeFields(mod, out, rosettaFile)) {
             out.push('\n')
         }
@@ -185,6 +187,40 @@ export class Annotator extends BaseAnnotator {
         if (mod) {
             modules.push(mod)
         }
+    }
+
+    protected writeAliases(
+        out: string[],
+        rosettaFile: RosettaFile | undefined,
+    ): boolean {
+        if (!rosettaFile) {
+            return false
+        }
+
+        let writtenCount = 0
+        for (const alias of rosettaFile.aliases) {
+            writtenCount++
+            const types = alias.types
+
+            out.push(`\n---@alias ${alias.name}`)
+
+            // simple alias
+            if (types.length === 1 && !types[0].notes) {
+                out.push(` ${types[0].type}`)
+                continue
+            }
+
+            for (const aliasType of types) {
+                out.push('\n---| ')
+                out.push(aliasType.type)
+
+                if (aliasType.notes) {
+                    out.push(` ${aliasType.notes}`)
+                }
+            }
+        }
+
+        return writtenCount > 0
     }
 
     protected writeClasses(

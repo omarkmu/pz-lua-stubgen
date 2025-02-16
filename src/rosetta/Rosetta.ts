@@ -2,6 +2,8 @@ import fs from 'fs'
 import path from 'path'
 import YAML from 'yaml'
 import {
+    RosettaAlias,
+    RosettaAliasType,
     RosettaArgs,
     RosettaClass,
     RosettaField,
@@ -105,6 +107,32 @@ export class Rosetta {
 
         const lua = data.languages.lua
 
+        const aliases: RosettaAlias[] = []
+        if (expectField(data, 'languages.lua.aliases', 'object')) {
+            for (const name of Object.keys(lua.aliases)) {
+                const arr = lua.aliases[name]
+                expect(arr, 'array', `alias '${name}'`)
+
+                const types: RosettaAliasType[] = []
+                for (let i = 0; i < arr.length; i++) {
+                    const alias = arr[i]
+                    expect(
+                        alias.type,
+                        'string',
+                        `'type' field of alias '${name}' at index ${i}`,
+                    )
+
+                    types.push(alias)
+                }
+
+                if (types.length === 0) {
+                    continue
+                }
+
+                aliases.push({ name, types })
+            }
+        }
+
         const classes: Record<string, RosettaClass> = {}
         if (expectField(data, 'languages.lua.classes', 'object')) {
             for (const name of Object.keys(lua.classes)) {
@@ -179,6 +207,7 @@ export class Rosetta {
         const file: RosettaFile = {
             id,
             filename,
+            aliases,
             classes,
             tables,
             functions,

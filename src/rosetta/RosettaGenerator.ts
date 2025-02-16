@@ -54,6 +54,16 @@ export class RosettaGenerator extends BaseAnnotator {
         }
 
         const luaData: any = {}
+        if (rosettaFile?.aliases && rosettaFile.aliases.length > 0) {
+            const aliases: Record<string, any> = {}
+
+            for (const alias of rosettaFile.aliases) {
+                aliases[alias.name] = alias.types
+            }
+
+            luaData.aliases = aliases
+        }
+
         if (mod.tables.length > 0) {
             luaData.tables = tables
         }

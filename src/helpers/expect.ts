@@ -9,6 +9,10 @@ export const expect = (
         return true
     }
 
+    if (type === 'array' && Array.isArray(value)) {
+        return true
+    }
+
     if (optional && (value === undefined || value === null)) {
         return false
     }

@@ -8,6 +8,7 @@ export interface RosettaFile {
     id: string
     filename: string
 
+    aliases: RosettaAlias[]
     classes: Record<string, RosettaClass>
     tables: Record<string, RosettaTable>
     functions: Record<string, RosettaFunction>
@@ -112,6 +113,16 @@ export interface RosettaReturn {
     type?: string
     notes?: string
     nullable?: boolean
+}
+
+export interface RosettaAliasType {
+    type: string
+    notes?: string
+}
+
+export interface RosettaAlias {
+    name: string
+    types: RosettaAliasType[]
 }
 
 export interface RosettaGenerateArgs extends BaseAnnotateArgs {

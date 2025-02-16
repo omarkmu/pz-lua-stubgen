@@ -172,7 +172,7 @@ export class RosettaUpdater extends RosettaGenerator {
 
             this.updateFields(
                 mod.id,
-                cls.staticFields,
+                [...cls.staticFields, ...cls.setterFields],
                 rosettaCls.staticFields,
                 rosettaCls.name,
             )

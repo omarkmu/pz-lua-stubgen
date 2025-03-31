@@ -3,7 +3,6 @@
 A command-line tool for generating Lua typestubs that are compatible with [lua-language-server](https://github.com/LuaLS/lua-language-server).
 
 The generated stubs can be found in the [pz-lua-stubs](https://github.com/omarkmu/pz-lua-stubs) repository.
-The type data is hosted at [pz-lua-stubdata](https://github.com/omarkmu/pz-lua-stubdata).
 
 ## Usage
 

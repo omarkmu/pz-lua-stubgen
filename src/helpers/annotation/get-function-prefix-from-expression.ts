@@ -3,6 +3,7 @@ import { getFunctionPrefix } from './get-function-prefix'
 
 export const getFunctionPrefixFromExpression = (
     expression: LuaExpression,
+    allowAmbiguous: boolean,
     tabLevel: number = 0,
 ): string | undefined => {
     if (expression.type !== 'literal') {
@@ -16,6 +17,7 @@ export const getFunctionPrefixFromExpression = (
     return getFunctionPrefix(
         expression.parameters,
         expression.returnTypes,
+        allowAmbiguous,
         tabLevel,
     )
 }

@@ -41,6 +41,7 @@ export class Annotator extends BaseAnnotator {
     protected alphabetize: boolean
     protected includeKahlua: boolean
     protected strictFields: boolean
+    protected allowAmbiguous: boolean
 
     constructor(args: AnnotateArgs) {
         super(args)
@@ -48,6 +49,7 @@ export class Annotator extends BaseAnnotator {
         this.alphabetize = args.alphabetize
         this.includeKahlua = args.includeKahlua
         this.strictFields = args.strictFields
+        this.allowAmbiguous = args.ambiguity
     }
 
     generateStub(mod: AnalyzedModule) {
@@ -284,7 +286,7 @@ export class Annotator extends BaseAnnotator {
 
                     notes = rosettaField.notes ?? ''
                 } else {
-                    typeString = getTypeString(field.types)
+                    typeString = getTypeString(field.types, this.allowAmbiguous)
                     notes = ''
                 }
 
@@ -318,6 +320,7 @@ export class Annotator extends BaseAnnotator {
                     writeTableFields(
                         cls.literalFields,
                         out,
+                        this.allowAmbiguous,
                         undefined,
                         writtenFields,
                         rosettaClass?.staticFields,
@@ -427,7 +430,12 @@ export class Annotator extends BaseAnnotator {
             return
         }
 
-        const prefix = getFunctionPrefix(func.parameters, func.returnTypes)
+        const prefix = getFunctionPrefix(
+            func.parameters,
+            func.returnTypes,
+            this.allowAmbiguous,
+        )
+
         if (prefix) {
             out.push(prefix)
         }
@@ -543,11 +551,14 @@ export class Annotator extends BaseAnnotator {
             const ret = mod.returns[i]
 
             if (!ret.expression) {
-                const typeString = getTypeString(ret.types)
+                const typeString = getTypeString(ret.types, this.allowAmbiguous)
+
                 locals.push(`\nlocal __RETURN${i}__ ---@type ${typeString}`)
                 returns.push(`__RETURN${i}__`)
             } else {
-                returns.push(getExpressionString(ret.expression))
+                returns.push(
+                    getExpressionString(ret.expression, this.allowAmbiguous),
+                )
             }
         }
 
@@ -592,14 +603,17 @@ export class Annotator extends BaseAnnotator {
 
             hasRosettaType = true
         } else if (field.expression) {
-            const prefix = getFunctionPrefixFromExpression(field.expression)
+            const prefix = getFunctionPrefixFromExpression(
+                field.expression,
+                this.allowAmbiguous,
+            )
 
             if (prefix) {
                 out.push('\n')
                 out.push(prefix)
             }
         } else {
-            typeString = getTypeString(field.types)
+            typeString = getTypeString(field.types, this.allowAmbiguous)
         }
 
         out.push('\n')
@@ -617,6 +631,7 @@ export class Annotator extends BaseAnnotator {
             rosettaField,
             typeString,
             hasRosettaType,
+            this.allowAmbiguous,
             false,
         )
 
@@ -717,7 +732,9 @@ export class Annotator extends BaseAnnotator {
             }
         } else {
             for (const ret of func.returnTypes) {
-                out.push(`\n---@return ${getTypeString(ret)}`)
+                out.push(
+                    `\n---@return ${getTypeString(ret, this.allowAmbiguous)}`,
+                )
             }
         }
 

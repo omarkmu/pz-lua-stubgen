@@ -169,6 +169,16 @@ const annotateCommand = (yargs: yargs.Argv) => {
             defaultDescription: 'false',
             desc: 'Marks classes as accepting fields of any type',
         })
+        .option('ambiguity', {
+            type: 'boolean',
+            hidden: true,
+            default: true,
+        })
+        .option('no-ambiguity', {
+            type: 'boolean',
+            defaultDescription: 'false',
+            desc: 'Treats analyzed union types as unknown',
+        })
         .option('rosetta', {
             type: 'string',
             alias: 'r',

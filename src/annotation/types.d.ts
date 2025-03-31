@@ -18,4 +18,9 @@ export interface AnnotateArgs extends BaseAnnotateArgs {
      * Whether fields should be treated as strict.
      */
     strictFields: boolean
+
+    /**
+     * Whether ambiguous analyzed types are allowed.
+     */
+    ambiguity: boolean
 }

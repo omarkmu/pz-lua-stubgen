@@ -4,6 +4,7 @@ import { getOperationString } from './get-operation-string'
 
 export const getExpressionString = (
     expression: LuaExpression,
+    allowAmbiguous: boolean = true,
     depth: number = 1,
 ): string => {
     switch (expression.type) {
@@ -14,11 +15,20 @@ export const getExpressionString = (
             return `require("${expression.module}")`
 
         case 'literal':
-            return getLiteralString(expression, depth)
+            return getLiteralString(expression, allowAmbiguous, depth)
 
         case 'index':
-            let indexBase = getExpressionString(expression.base, depth)
-            const index = getExpressionString(expression.index, depth)
+            let indexBase = getExpressionString(
+                expression.base,
+                allowAmbiguous,
+                depth,
+            )
+
+            const index = getExpressionString(
+                expression.index,
+                allowAmbiguous,
+                depth,
+            )
 
             indexBase = doBaseParentheses(expression.base)
                 ? `(${indexBase})`
@@ -27,7 +37,12 @@ export const getExpressionString = (
             return `${indexBase}[${index}]`
 
         case 'member':
-            let memberBase = getExpressionString(expression.base, depth)
+            let memberBase = getExpressionString(
+                expression.base,
+                allowAmbiguous,
+                depth,
+            )
+
             memberBase = doBaseParentheses(expression.base)
                 ? `(${memberBase})`
                 : memberBase
@@ -35,7 +50,7 @@ export const getExpressionString = (
             return `${memberBase}${expression.indexer}${expression.member}`
 
         case 'operation':
-            return getOperationString(expression, depth)
+            return getOperationString(expression, allowAmbiguous, depth)
     }
 }
 

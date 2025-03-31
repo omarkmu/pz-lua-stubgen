@@ -4,14 +4,16 @@ import { getTypeString } from './get-type-string'
 export const getFunctionPrefix = (
     parameters?: AnalyzedParameter[],
     returns?: Set<string>[],
+    allowAmbiguous: boolean = true,
     tabLevel: number = 0,
 ): string | undefined => {
     const tabs = '    '.repeat(tabLevel)
 
     const out = []
+
     parameters ??= []
     for (const param of parameters) {
-        let typeString = getTypeString(param.types)
+        const typeString = getTypeString(param.types, allowAmbiguous)
         if (typeString === 'unknown') {
             continue
         }
@@ -25,7 +27,8 @@ export const getFunctionPrefix = (
     for (const ret of returns) {
         out.push('\n')
         out.push(tabs)
-        out.push(`---@return ${getTypeString(ret)}`)
+
+        out.push(`---@return ${getTypeString(ret, allowAmbiguous)}`)
     }
 
     return out.join('')

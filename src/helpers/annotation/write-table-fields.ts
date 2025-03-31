@@ -11,6 +11,7 @@ import { writeNotes } from './write-notes'
 export const writeTableFields = (
     fields: TableField[],
     out: string[],
+    allowAmbiguous: boolean,
     depth: number = 1,
     writtenFields?: Set<string>,
     rosettaFields?: Record<string, RosettaField>,
@@ -38,7 +39,11 @@ export const writeTableFields = (
                 break
 
             case 'expression':
-                const exprString = getExpressionString(key.expression)
+                const exprString = getExpressionString(
+                    key.expression,
+                    allowAmbiguous,
+                )
+
                 keyString = `[${exprString}]`
                 break
         }
@@ -76,12 +81,16 @@ export const writeTableFields = (
 
             hasRosettaType = true
         } else if (field.types && field.types.size > 0 && !isRef) {
-            typeString = getTypeString(field.types)
+            typeString = getTypeString(field.types, allowAmbiguous)
         }
 
         let funcString: string | undefined
         if (!typeString && field.value.type === 'literal') {
-            funcString = getFunctionPrefixFromExpression(field.value, depth)
+            funcString = getFunctionPrefixFromExpression(
+                field.value,
+                allowAmbiguous,
+                depth,
+            )
         }
 
         const isTable = isLiteralTable(field.value)
@@ -93,6 +102,7 @@ export const writeTableFields = (
             typeString,
             hasRosettaType,
             isTable,
+            allowAmbiguous,
             depth + 1,
         )
 

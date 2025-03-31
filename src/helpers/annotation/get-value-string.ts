@@ -8,6 +8,7 @@ export const getValueString = (
     typeString: string | undefined,
     hasRosettaType: boolean,
     hasTableLiteral: boolean,
+    allowAmbiguous: boolean,
     depth: number = 1,
 ): [string, string | undefined] => {
     let valueString: string
@@ -15,7 +16,7 @@ export const getValueString = (
         valueString = rosettaField.defaultValue
         typeString = hasRosettaType ? typeString : undefined
     } else if (expression && !hasRosettaType) {
-        valueString = getExpressionString(expression, depth)
+        valueString = getExpressionString(expression, allowAmbiguous, depth)
     } else {
         valueString = 'nil'
     }

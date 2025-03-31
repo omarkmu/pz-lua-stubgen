@@ -3,6 +3,7 @@ import { writeTableFields } from './write-table-fields'
 
 export const getTableString = (
     expression: LuaExpression,
+    allowAmbiguous: boolean,
     depth: number = 1,
 ): string | undefined => {
     if (expression.type !== 'literal') {
@@ -19,7 +20,7 @@ export const getTableString = (
     }
 
     const out: string[] = ['{']
-    writeTableFields(fields, out, depth)
+    writeTableFields(fields, out, allowAmbiguous, depth)
 
     out.push('\n')
     out.push('    '.repeat(Math.max(depth - 1, 0)))

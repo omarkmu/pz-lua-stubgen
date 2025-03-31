@@ -4,6 +4,7 @@ import { getTableString } from './get-table-string'
 
 export const getLiteralString = (
     expression: LuaLiteral,
+    allowAmbiguous: boolean,
     depth: number = 1,
 ): string => {
     switch (expression.luaType) {
@@ -28,6 +29,6 @@ export const getLiteralString = (
             return getFunctionString(undefined, params)
 
         case 'table':
-            return getTableString(expression, depth) ?? '{}'
+            return getTableString(expression, allowAmbiguous, depth) ?? '{}'
     }
 }

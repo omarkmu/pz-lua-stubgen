@@ -1,0 +1,139 @@
+version: "1.1"
+languages:
+  lua:
+    tags:
+      - StubGen_Definitions
+    tables:
+      __classmetatables: {}
+      string:
+        tags: [StubGen_NoInitializer]
+        staticMethods:
+          - name: trim
+            parameters:
+              - name: str
+                type: string
+            return:
+              - type: string
+          - name: split
+            parameters:
+              - name: str
+                type: string
+              - name: regex
+                type: string
+            return:
+              - type: string[]
+          - name: sort
+            parameters:
+              - name: str
+                type: string
+              - name: other
+                type: string
+            return:
+              - type: boolean
+          - name: contains
+            parameters:
+              - name: str
+                type: string
+              - name: other
+                type: string
+            return:
+              - type: boolean
+      table:
+        tags: [StubGen_NoInitializer]
+        staticMethods:
+          - name: isempty
+            parameters:
+              - name: table
+                type: table
+            return:
+              - type: boolean
+          - name: wipe
+            parameters:
+              - name: table
+                type: table
+          - name: newarray
+            parameters:
+              - name: "..."
+                type: unknown
+            return:
+              - type: table
+            overloads:
+              - parameters:
+                  - name: table
+                    type: table
+                return:
+                  - type: table
+    classes:
+      Reader:
+        mutable: false
+      InputStream:
+        mutable: false
+      Random:
+        local: true
+        mutable: false
+        methods:
+          - name: random
+            parameters:
+              - name: m
+                type: integer?
+              - name: n
+                type: integer?
+            return:
+              - type: number
+          - name: seed
+            parameters:
+              - name: value
+                type: unknown?
+    functions:
+      - name: serialize
+        parameters:
+          - name: value
+            type: unknown
+          - name: multiline
+            type: string?
+          - name: indent
+            type: string?
+        return:
+          - type: string
+      - name: deserialize
+        parameters:
+          - name: s
+            type: string
+        return:
+          - type: unknown
+      - name: pp
+        parameters:
+          - name: value
+            type: unknown
+        return:
+          - type: string
+      - name: debugstacktrace
+        parameters:
+          - name: thread
+            type: thread?
+          - name: level
+            type: integer?
+          - name: maxLines
+            type: integer?
+          - name: maxLevel
+            type: integer?
+        return:
+          - type: string
+      - name: loadstream
+        parameters:
+          - name: stream
+            type: Reader | InputStream
+          - name: chunkname
+            type: string
+        return:
+          - type: function?
+          - type: string?
+      - name: bytecodeloader
+        parameters:
+          - name: loader
+            type: string
+        return:
+          - type: (string | function)?
+      - name: newrandom
+        return:
+          - type: Random

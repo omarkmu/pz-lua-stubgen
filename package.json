@@ -1,24 +1,28 @@
 {
-  "scripts": {
-    "build": "npx rollup --config",
-    "start": "node pz-doc.js annotate -i assets/lua -o dist/lua -v true",
-    "dev": "nodemon -e ts --exec \"npm run build & npm run start\""
-  },
-  "dependencies": {
-    "luaparse": "^0.3.1",
-    "pz-rosetta-ts": "^1.0.1",
-    "yargs": "^17.7.2"
-  },
-  "devDependencies": {
-    "@rollup/plugin-commonjs": "^25.0.0",
-    "@rollup/plugin-node-resolve": "^15.0.2",
-    "@rollup/plugin-typescript": "^11.1.1",
-    "@types/luaparse": "^0.2.9",
-    "@types/node": "^20.2.1",
-    "@types/yargs": "^17.0.24",
-    "nodemon": "2.0.22",
-    "rollup": "^3.22.0",
-    "tslib": "^2.5.2",
-    "typescript": "^5.0.4"
-  }
+    "name": "pz-lua-stubgen",
+    "main": "build/main.js",
+    "version": "0.1.0",
+    "scripts": {
+        "build": "tsc",
+        "start": "node build/main.js",
+        "dev": "nodemon -e ts --exec \"npm run build & npm run start -- -i assets/lua -o out/lua -k -v --all-subdirectories\""
+    },
+    "dependencies": {
+        "@datastructures-js/deque": "^1.0.4",
+        "luaparse": "^0.3.1",
+        "supports-color": "^8.1.1",
+        "winston": "^3.17.0",
+        "yaml": "^2.7.0",
+        "yargs": "^17.7.2"
+    },
+    "devDependencies": {
+        "@types/luaparse": "^0.2.12",
+        "@types/node": "^22.10.10",
+        "@types/supports-color": "^8.1.1",
+        "@types/yargs": "^17.0.33",
+        "nodemon": "^3.1.9",
+        "prettier": "^3.4.2",
+        "tslib": "^2.8.1",
+        "typescript": "^5.7.3"
+    }
 }

@@ -4,8 +4,8 @@
 # NodeJS
 node_modules/
 
-# Compiled JS code.
-pz-doc.js
+# Compiled JS
+build/
 
 # Local testing
 assets/

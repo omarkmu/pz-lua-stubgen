@@ -190,6 +190,10 @@ const annotateCommand = (yargs: yargs.Argv) => {
             implies: ['rosetta'],
             desc: 'Generate typestubs using only Rosetta data',
         })
+        .option('helper-pattern', {
+            type: 'string',
+            desc: 'Regular expression to use to determine whether a class or table should have no initializer table',
+        })
         .check((args: any) => {
             if (!args.inputDirectory && !args.rosettaOnly) {
                 throw new Error(

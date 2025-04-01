@@ -42,6 +42,7 @@ export class Annotator extends BaseAnnotator {
     protected includeKahlua: boolean
     protected strictFields: boolean
     protected allowAmbiguous: boolean
+    protected helperPattern: RegExp | undefined
 
     constructor(args: AnnotateArgs) {
         super(args)
@@ -50,6 +51,10 @@ export class Annotator extends BaseAnnotator {
         this.includeKahlua = args.includeKahlua
         this.strictFields = args.strictFields
         this.allowAmbiguous = args.ambiguity
+
+        if (args.helperPattern) {
+            this.helperPattern = new RegExp(args.helperPattern)
+        }
     }
 
     generateStub(mod: AnalyzedModule) {
@@ -178,6 +183,17 @@ export class Annotator extends BaseAnnotator {
         return '__' + name
     }
 
+    protected shouldSkipInitializer(name: string, tags: Set<string>) {
+        if (
+            tags.has('StubGen_NoInitializer') ||
+            this.helperPattern?.test(name)
+        ) {
+            return true
+        }
+
+        return false
+    }
+
     protected async transformModules(modules: AnalyzedModule[]) {
         await super.transformModules(modules)
 
@@ -235,7 +251,7 @@ export class Annotator extends BaseAnnotator {
             writtenCount++
             const rosettaClass = rosettaFile?.classes[cls.name]
             const tags = new Set(rosettaClass?.tags ?? [])
-            const noInitializer = tags.has('StubGen_NoInitializer')
+            const noInitializer = this.shouldSkipInitializer(cls.name, tags)
 
             const identName = this.getSafeIdentifier(cls.name, cls.local)
             const base = rosettaClass?.extends ?? cls.extends
@@ -767,7 +783,7 @@ export class Annotator extends BaseAnnotator {
                 ? this.getSafeIdentifier(table.name)
                 : table.name
 
-            if (!tags.has('StubGen_NoInitializer')) {
+            if (!this.shouldSkipInitializer(table.name, tags)) {
                 writeNotes(rosettaTable?.notes, out)
                 this.writeRosettaOperators(rosettaTable?.operators, out)
 

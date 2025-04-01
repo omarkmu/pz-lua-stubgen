@@ -23,4 +23,9 @@ export interface AnnotateArgs extends BaseAnnotateArgs {
      * Whether ambiguous analyzed types are allowed.
      */
     ambiguity: boolean
+
+    /**
+     * Regular expression used to determine whether a class or table has no initializer.
+     */
+    helperPattern?: string
 }

@@ -11,7 +11,9 @@ export const getTypeString = (
 
     const type = types.size > 0 ? [...types].join(' | ') : 'unknown'
     if (nullable) {
-        return type.includes('|') ? `(${type})?` : `${type}?`
+        return type.includes('|') || type.startsWith('fun(')
+            ? `(${type})?`
+            : `${type}?`
     }
 
     return type

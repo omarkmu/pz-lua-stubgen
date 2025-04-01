@@ -31,6 +31,7 @@ import {
     LuaMember,
     AnalyzedTable,
     AnalysisContextArgs,
+    ReturnsItem,
 } from './types'
 
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
@@ -371,55 +372,7 @@ export class AnalysisContext {
                     item.classes.forEach((x) => classes.push(x))
                     item.requires.forEach((x) => requires.push(x))
                 case 'returns':
-                    if (item.returns === undefined) {
-                        break
-                    }
-
-                    const funcInfo = this.getFunctionInfo(item.id)
-
-                    funcInfo.minReturns = Math.min(
-                        funcInfo.minReturns ?? Number.MAX_VALUE,
-                        item.returns.length,
-                    )
-
-                    // don't add returns to a class constructor
-                    if (funcInfo.isConstructor) {
-                        break
-                    }
-
-                    for (let i = 0; i < item.returns.length; i++) {
-                        funcInfo.returnTypes[i] ??= new Set()
-                        funcInfo.returnExpressions[i] ??= new Set()
-
-                        let types: Set<string>
-                        if (item.type === 'returns') {
-                            const ret = item.returns[i]
-
-                            funcInfo.returnExpressions[i].add(ret)
-                            types = this.remapBooleans(
-                                this.resolveTypes({ expression: ret }),
-                            )
-                        } else {
-                            types = item.returns[i].types
-                        }
-
-                        types.forEach((x) => funcInfo.returnTypes[i].add(x))
-                    }
-
-                    const min = funcInfo.minReturns
-                    if (min === undefined) {
-                        continue
-                    }
-
-                    if (funcInfo.returnTypes.length <= min) {
-                        continue
-                    }
-
-                    // mark returns exceeding the minimum as nullable
-                    for (let i = min; i < funcInfo.returnTypes.length; i++) {
-                        funcInfo.returnTypes[i].add('nil')
-                    }
-
+                    this.resolveReturns(item)
                     break
             }
         }
@@ -466,6 +419,86 @@ export class AnalysisContext {
             returns,
             requires,
             seenClasses,
+        }
+    }
+
+    resolveReturns(item: ReturnsItem | ResolvedScopeItem) {
+        if (item.returns === undefined) {
+            return
+        }
+
+        const funcInfo = this.getFunctionInfo(item.id)
+
+        // don't add returns to a class constructor
+        if (funcInfo.isConstructor) {
+            funcInfo.minReturns = Math.min(
+                funcInfo.minReturns ?? Number.MAX_VALUE,
+                item.returns.length,
+            )
+
+            return
+        }
+
+        let fullReturnCount = item.returns.length
+        for (let i = 0; i < item.returns.length; i++) {
+            funcInfo.returnTypes[i] ??= new Set()
+            funcInfo.returnExpressions[i] ??= new Set()
+
+            if (item.type === 'resolved') {
+                item.returns[i].types.forEach((x) =>
+                    funcInfo.returnTypes[i].add(x),
+                )
+
+                continue
+            }
+
+            const ret = item.returns[i]
+            const isTailCall =
+                i === item.returns.length - 1 &&
+                ret.type === 'operation' &&
+                ret.operator === 'call'
+
+            if (isTailCall) {
+                const funcReturns = this.resolveFunctionReturnTypes(ret)
+                if (funcReturns) {
+                    fullReturnCount += funcReturns.length - 1
+                    funcInfo.returnExpressions[i].add(ret)
+
+                    for (let j = 0; j < funcReturns.length; j++) {
+                        funcInfo.returnTypes[i + j] ??= new Set()
+
+                        this.remapBooleans(funcReturns[j]).forEach((x) =>
+                            funcInfo.returnTypes[i + j].add(x),
+                        )
+                    }
+
+                    continue
+                }
+            }
+
+            funcInfo.returnExpressions[i].add(ret)
+            this.remapBooleans(this.resolveTypes({ expression: ret })).forEach(
+                (x) => funcInfo.returnTypes[i].add(x),
+            )
+        }
+
+        funcInfo.minReturns = Math.min(
+            funcInfo.minReturns ?? Number.MAX_VALUE,
+            fullReturnCount,
+        )
+
+        const min = funcInfo.minReturns
+        if (min === undefined) {
+            return
+        }
+
+        if (funcInfo.returnTypes.length <= min) {
+            return
+        }
+
+        // mark returns exceeding the minimum as nullable
+        for (let i = min; i < funcInfo.returnTypes.length; i++) {
+            funcInfo.returnTypes[i].add('nil')
         }
     }
 
@@ -2991,6 +3024,48 @@ export class AnalysisContext {
         return fieldTypes
     }
 
+    protected resolveFunctionReturnTypes(
+        op: LuaOperation,
+        seen?: Map<LuaExpressionInfo, Set<string>>,
+    ): Set<string>[] | undefined {
+        const func = op.arguments[0]
+        if (!func) {
+            return
+        }
+
+        const types: Set<string>[] = []
+        const knownTypes = new Set<string>()
+        if (this.addKnownReturns(func, knownTypes)) {
+            types.push(knownTypes)
+            return types
+        }
+
+        const resolvedFuncTypes = this.resolveTypes({ expression: func }, seen)
+        if (!resolvedFuncTypes || resolvedFuncTypes.size !== 1) {
+            return
+        }
+
+        const resolvedFunc = [...resolvedFuncTypes][0]
+        if (!resolvedFunc.startsWith('@function')) {
+            return
+        }
+
+        // handle constructors
+        const funcInfo = this.getFunctionInfo(resolvedFunc)
+        if (funcInfo.isConstructor) {
+            types.push(new Set())
+            types[0].add('@instance') // mark as an instance to correctly attribute fields
+            funcInfo.returnTypes[0]?.forEach((x) => types[0].add(x))
+            return types
+        }
+
+        for (let i = 0; i < funcInfo.returnTypes.length; i++) {
+            types.push(new Set(funcInfo.returnTypes[i]))
+        }
+
+        return types
+    }
+
     /**
      * Resolves the possible types for the result of an operation.
      * @param op The operation expression.
@@ -3012,38 +3087,12 @@ export class AnalysisContext {
 
         switch (op.operator) {
             case 'call':
-                const func = op.arguments[0]
-                if (!func) {
+                const returnTypes = this.resolveFunctionReturnTypes(op, seen)
+                if (returnTypes === undefined) {
                     break
                 }
 
-                if (this.addKnownReturns(func, types)) {
-                    break
-                }
-
-                const resolvedFuncTypes = this.resolveTypes(
-                    { expression: func },
-                    seen,
-                )
-
-                if (!resolvedFuncTypes || resolvedFuncTypes.size !== 1) {
-                    break
-                }
-
-                const resolvedFunc = [...resolvedFuncTypes][0]
-                if (!resolvedFunc.startsWith('@function')) {
-                    break
-                }
-
-                // handle constructors
-                const funcInfo = this.getFunctionInfo(resolvedFunc)
-                if (funcInfo.isConstructor) {
-                    types.add('@instance') // mark as an instance to correctly attribute fields
-                    funcInfo.returnTypes[0]?.forEach((x) => types.add(x))
-                    break
-                }
-
-                const returns = funcInfo.returnTypes[index - 1]
+                const returns = returnTypes[index - 1]
                 if (!returns) {
                     types.add('nil')
                     break

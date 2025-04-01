@@ -329,7 +329,12 @@ export class Annotator extends BaseAnnotator {
                 out.push(`${identName} = `)
 
                 if (cls.deriveName && base) {
-                    out.push(`${base}:derive("${cls.deriveName}")`)
+                    // multiple base classes from Rosetta → just write a table
+                    if (base.includes(',')) {
+                        out.push('{}')
+                    } else {
+                        out.push(`${base}:derive("${cls.deriveName}")`)
+                    }
                 } else if (cls.literalFields.length > 0) {
                     out.push('{')
 

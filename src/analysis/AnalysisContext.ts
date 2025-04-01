@@ -186,23 +186,31 @@ export class AnalysisContext {
                     return false
                 })
 
-                if (memberBase.length === 1) {
-                    // ignore __index in instances
-                    if (isInstance && lhs.member === '__index') {
-                        break
-                    }
-
-                    const key = this.getLiteralKey(lhs.member)
-                    this.addField(
-                        scope,
-                        memberBase[0],
-                        key,
-                        rhs,
-                        lhs,
-                        index,
-                        isInstance,
-                    )
+                if (memberBase.length !== 1) {
+                    break
                 }
+
+                // ignore __index in instances
+                if (isInstance && lhs.member === '__index') {
+                    break
+                }
+
+                // add original assignment name to tables
+                if (rhs.type === 'literal' && rhs.tableId) {
+                    const info = this.getTableInfo(rhs.tableId)
+                    info.originalName ??= this.getFieldClassName(scope, lhs)
+                }
+
+                const memberKey = this.getLiteralKey(lhs.member)
+                this.addField(
+                    scope,
+                    memberBase[0],
+                    memberKey,
+                    rhs,
+                    lhs,
+                    index,
+                    isInstance,
+                )
 
                 break
 
@@ -1210,48 +1218,55 @@ export class AnalysisContext {
 
         info.parameterTypes.push(types)
 
-        // assume Class:new(...) returns Class
-        if (identExpr.member === 'new') {
-            info.returnTypes.push(new Set(types))
-            info.isConstructor = true
-
-            if (!tableInfo) {
-                return
-            }
-
-            // `:new` method without class → create class
-            if (!tableInfo.className && !tableInfo.fromHiddenClass) {
-                let name: string | undefined
-                let generated = false
-                switch (base.type) {
-                    case 'reference':
-                        const localName = scope.localIdToName(base.id)
-                        name = localName ?? base.id
-                        generated = localName !== undefined
-                        break
-
-                    case 'member':
-                        name = this.getFieldClassName(scope, base)
-                        generated = true
-                        break
-                }
-
-                if (!name) {
-                    return
-                }
-
-                tableInfo.className = name
-                scope.items.push({
-                    type: 'partial',
-                    classInfo: {
-                        name,
-                        tableId,
-                        generated,
-                        definingModule: this.currentModule,
-                    },
-                })
-            }
+        if (identExpr.member !== 'new') {
+            return
         }
+
+        // assume Class:new(...) returns Class
+        info.returnTypes.push(new Set(types))
+        info.isConstructor = true
+
+        if (!tableInfo || tableInfo.className || tableInfo.fromHiddenClass) {
+            return
+        }
+
+        // `:new` method without class → create class
+        let name: string | undefined
+        let generated = false
+        switch (base.type) {
+            case 'reference':
+                const localName = scope.localIdToName(base.id)
+                name = tableInfo.originalName ?? localName ?? base.id
+
+                generated =
+                    tableInfo.originalName !== undefined ||
+                    localName !== undefined
+
+                break
+
+            case 'member':
+                name =
+                    tableInfo.originalName ??
+                    this.getFieldClassName(scope, base)
+
+                generated = true
+                break
+        }
+
+        if (!name) {
+            return
+        }
+
+        tableInfo.className = name
+        scope.items.push({
+            type: 'partial',
+            classInfo: {
+                name,
+                tableId,
+                generated,
+                definingModule: this.currentModule,
+            },
+        })
     }
 
     protected checkClassTable(expr: LuaExpression): string | undefined {

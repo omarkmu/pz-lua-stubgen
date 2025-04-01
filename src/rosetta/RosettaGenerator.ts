@@ -16,12 +16,17 @@ import {
 export class RosettaGenerator extends BaseAnnotator {
     protected rosettaFormat: 'json' | 'yml'
     protected keepTypes: boolean
+    protected skipPattern: RegExp | undefined
 
     constructor(args: RosettaGenerateArgs) {
         super(args)
 
         this.keepTypes = args.keepTypes ?? false
         this.rosettaFormat = args.format ?? 'yml'
+
+        if (args.skipPattern) {
+            this.skipPattern = new RegExp(args.skipPattern)
+        }
     }
 
     generateRosetta(mod: AnalyzedModule): string {
@@ -130,7 +135,7 @@ export class RosettaGenerator extends BaseAnnotator {
             const suffix = this.rosettaFormat === 'json' ? '.json' : '.yml'
 
             for (const mod of modules) {
-                if (skipIds.has(mod.id)) {
+                if (skipIds.has(mod.id) || this.skipPattern?.test(mod.id)) {
                     continue
                 }
 

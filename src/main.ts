@@ -248,6 +248,10 @@ const updateRosettaCommand = (yargs: yargs.Argv) => {
             string: true,
             desc: 'List of file identifiers to treat as known files',
         })
+        .option('skip-pattern', {
+            type: 'string',
+            desc: 'Regular expression to use to determine whether a name should be ignored',
+        })
 
     addExcludeOptions(yargs)
 

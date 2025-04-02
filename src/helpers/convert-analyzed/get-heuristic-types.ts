@@ -64,6 +64,7 @@ export const getHeuristicTypes = (
             break
 
         case 'PLAYERNUM':
+        case 'PLAYERID':
             heuristicTypes.add('integer')
             break
 

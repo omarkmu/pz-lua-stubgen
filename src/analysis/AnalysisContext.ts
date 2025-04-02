@@ -1,6 +1,6 @@
 import ast from 'luaparse'
 import { LuaScope } from '../scopes'
-import { getLuaFieldKey, readLuaStringLiteral } from '../helpers'
+import { getLuaFieldKey, isEmptyClass, readLuaStringLiteral } from '../helpers'
 import {
     AssignmentItem,
     FunctionDefinitionItem,
@@ -268,6 +268,17 @@ export class AnalysisContext {
                     )
 
                     const finalizedCls = finalized as AnalyzedClass
+
+                    // avoid writing unnecessary empty class annotations
+                    if (
+                        cls.definingModule &&
+                        cls.definingModule !== this.currentModule &&
+                        isEmptyClass(finalizedCls)
+                    ) {
+                        i++
+                        continue
+                    }
+
                     classes.push(finalizedCls)
 
                     let list = clsMap.get(finalized.name)

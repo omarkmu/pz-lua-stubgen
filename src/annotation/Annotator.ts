@@ -726,6 +726,11 @@ export class Annotator extends BaseAnnotator {
                 param.nullable,
             )
 
+            // skip `---@param x unknown` if there are no details
+            if (type === 'unknown' && !param.notes) {
+                continue
+            }
+
             out.push(`\n---@param ${param.name.trim()} ${type}`)
             if (param.notes) {
                 out.push(` ${getInlineNotes(param.notes)}`)

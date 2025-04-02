@@ -1718,6 +1718,14 @@ export class AnalysisContext {
                 continue
             }
 
+            const valueTypes = this.finalizeTypes(
+                this.resolveTypes({ expression: value }),
+            )
+
+            if (valueTypes.size === 1 && valueTypes.has('function')) {
+                continue
+            }
+
             let types: Set<string> | undefined
             if (keyName) {
                 literalKeys.add(keyName)

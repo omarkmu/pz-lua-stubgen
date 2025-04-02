@@ -248,13 +248,27 @@ export class AnalysisContext {
 
             const classes: AnalyzedClass[] = []
             const tables: AnalyzedTable[] = []
-            for (const cls of mod.classes) {
-                const [finalized, isTable] = this.finalizeClass(cls, refMap)
+
+            let i = 0
+            const seenClasses = new Set<string>()
+            const readingClasses = [...mod.classes]
+            while (i < readingClasses.length) {
+                const cls = readingClasses[i]
+                seenClasses.add(cls.name)
+                const [finalized, isTable, extra] = this.finalizeClass(
+                    cls,
+                    refMap,
+                )
 
                 if (isTable) {
                     tables.push(finalized)
                 } else {
-                    classes.push(finalized as AnalyzedClass)
+                    readingClasses.push(
+                        ...extra.filter((x) => !seenClasses.has(x.name)),
+                    )
+
+                    const finalizedCls = finalized as AnalyzedClass
+                    classes.push(finalizedCls)
 
                     let list = clsMap.get(finalized.name)
                     if (!list) {
@@ -262,8 +276,10 @@ export class AnalysisContext {
                         clsMap.set(finalized.name, list)
                     }
 
-                    list.push(finalized as AnalyzedClass)
+                    list.push(finalizedCls)
                 }
+
+                i++
             }
 
             const fields: AnalyzedField[] = []
@@ -804,6 +820,7 @@ export class AnalysisContext {
         const info = this.getTableInfo(tableId)
         info.className = name
         info.isAtomUI = true
+        info.isLocalClass = true
 
         for (const [field, defs] of literalInfo.definitions) {
             info.definitions.set(field, defs)
@@ -943,6 +960,95 @@ export class AnalysisContext {
             fromLiteral,
             definingModule: this.currentModule,
             functionLevel: !scope.id.startsWith('@module'),
+        })
+
+        if (info.className || !info.containerId) {
+            return
+        }
+
+        if (!lhs || (lhs.type !== 'member' && lhs.type !== 'index')) {
+            return
+        }
+
+        // function assignment to a member of a non-class contained by a class → create nested class
+        if (rhs.type !== 'literal' || !rhs.functionId) {
+            return
+        }
+
+        this.addImpliedClass(scope, lhs.base, id, info)
+
+        if (!info.className) {
+            return
+        }
+
+        // extract the field name
+        const endIdx = info.className.lastIndexOf('.')
+        const targetName = this.getLiteralKey(
+            info.className.slice(endIdx ? endIdx + 1 : 0),
+        )
+
+        // overwrite defs with reference to class
+        const containerInfo = this.getTableInfo(info.containerId)
+        if (!containerInfo.definitions.has(targetName)) {
+            return
+        }
+
+        fieldDefs = []
+        fieldDefs.push({
+            expression: {
+                type: 'literal',
+                luaType: 'table',
+                tableId: id,
+            },
+            definingModule: this.currentModule,
+        })
+
+        containerInfo.definitions.set(targetName, fieldDefs)
+    }
+
+    protected addImpliedClass(
+        scope: LuaScope,
+        base: LuaExpression,
+        tableId: string,
+        tableInfo: TableInfo,
+    ) {
+        let name: string | undefined
+        let generated = false
+        switch (base.type) {
+            case 'reference':
+                const localName = scope.localIdToName(base.id)
+                name = tableInfo.originalName ?? localName ?? base.id
+
+                generated =
+                    tableInfo.originalName !== undefined ||
+                    localName !== undefined
+
+                break
+
+            case 'member':
+                name =
+                    tableInfo.originalName ??
+                    this.getFieldClassName(scope, base)
+
+                generated = true
+                break
+        }
+
+        if (!name) {
+            return
+        }
+
+        tableInfo.className = name
+        tableInfo.isLocalClass = generated
+        tableInfo.definingModule ??= this.currentModule
+        scope.items.push({
+            type: 'partial',
+            classInfo: {
+                name,
+                tableId,
+                generated,
+                definingModule: tableInfo.definingModule,
+            },
         })
     }
 
@@ -1231,42 +1337,7 @@ export class AnalysisContext {
         }
 
         // `:new` method without class → create class
-        let name: string | undefined
-        let generated = false
-        switch (base.type) {
-            case 'reference':
-                const localName = scope.localIdToName(base.id)
-                name = tableInfo.originalName ?? localName ?? base.id
-
-                generated =
-                    tableInfo.originalName !== undefined ||
-                    localName !== undefined
-
-                break
-
-            case 'member':
-                name =
-                    tableInfo.originalName ??
-                    this.getFieldClassName(scope, base)
-
-                generated = true
-                break
-        }
-
-        if (!name) {
-            return
-        }
-
-        tableInfo.className = name
-        scope.items.push({
-            type: 'partial',
-            classInfo: {
-                name,
-                tableId,
-                generated,
-                definingModule: this.currentModule,
-            },
-        })
+        this.addImpliedClass(scope, base, tableId, tableInfo)
     }
 
     protected checkClassTable(expr: LuaExpression): string | undefined {
@@ -1427,6 +1498,7 @@ export class AnalysisContext {
 
         tableInfo.className = name
         tableInfo.isClosureClass = true
+        tableInfo.isLocalClass = true
         scope.items.push({
             type: 'partial',
             classInfo: {
@@ -1545,6 +1617,7 @@ export class AnalysisContext {
             const newId = this.newTableID()
             const newInfo = this.getTableInfo(newId)
             newInfo.className = name
+            newInfo.isLocalClass = true
 
             scope.items.push({
                 type: 'partial',
@@ -1647,7 +1720,7 @@ export class AnalysisContext {
     protected finalizeClass(
         cls: ResolvedClassInfo,
         refs: Map<string, LuaExpression | null>,
-    ): [AnalyzedClass | AnalyzedTable, boolean] {
+    ): [AnalyzedClass | AnalyzedTable, boolean, ResolvedClassInfo[]] {
         const info = this.getTableInfo(cls.tableId)
         const isTable = info.emitAsTable ?? false
         const isClassDefiner = cls.definingModule === this.currentModule
@@ -1903,8 +1976,22 @@ export class AnalysisContext {
             })
         }
 
+        if (isTable) {
+            const finalized: AnalyzedTable = {
+                name: cls.name,
+                local: cls.generated || info.isLocalClass,
+                staticFields,
+                methods,
+                functions,
+                overloads,
+            }
+
+            return [finalized, true, []]
+        }
+
         // check for floating setters
         const seenIds = new Set<string>()
+        const extraClasses: ResolvedClassInfo[] = []
         while (checkSubfields.length > 0) {
             const [id, baseName] = checkSubfields.pop()!
             if (seenIds.has(id)) {
@@ -1929,6 +2016,18 @@ export class AnalysisContext {
                 })
 
                 if (definingExprs.length > 0) {
+                    // don't add setter fields for nested classes, signal to include the right class
+                    if (tableInfo.className) {
+                        extraClasses.push({
+                            name: tableInfo.className,
+                            tableId: tableInfo.id,
+                            definingModule: tableInfo.definingModule,
+                            generated: tableInfo.isLocalClass,
+                        })
+
+                        continue
+                    }
+
                     const [expression, types] = this.finalizeStaticField(
                         definingExprs,
                         refs,
@@ -1957,24 +2056,11 @@ export class AnalysisContext {
             }
         }
 
-        if (isTable) {
-            const finalized: AnalyzedTable = {
-                name: cls.name,
-                local: cls.generated,
-                staticFields,
-                methods,
-                functions,
-                overloads,
-            }
-
-            return [finalized, true]
-        }
-
         const finalized: AnalyzedClass = {
             name: cls.name,
             extends: cls.base,
             deriveName: cls.deriveName,
-            local: cls.generated,
+            local: cls.generated || info.isLocalClass,
             fields,
             literalFields,
             staticFields,
@@ -1986,7 +2072,7 @@ export class AnalysisContext {
             overloads,
         }
 
-        return [finalized, false]
+        return [finalized, false, extraClasses]
     }
 
     protected finalizeClassFields(
@@ -2735,6 +2821,7 @@ export class AnalysisContext {
             id,
             literalFields: [],
             definitions: new Map(),
+            definingModule: this.currentModule,
         }
 
         this.idToTableInfo.set(id, info)

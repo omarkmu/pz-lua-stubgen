@@ -99,7 +99,12 @@ export class BaseAnnotator extends Base {
                     cls.fields = []
                     cls.literalFields = []
                     cls.setterFields = []
-                    cls.staticFields = []
+
+                    // include nested classes, throw away the rest
+                    cls.staticFields = cls.staticFields.filter(
+                        (x) => x.types.size === 1 && !x.expression,
+                    )
+
                     continue
                 }
 

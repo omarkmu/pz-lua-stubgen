@@ -19,6 +19,16 @@ export const getValueString = (
         valueString = getExpressionString(expression, allowAmbiguous, depth)
     } else {
         valueString = 'nil'
+
+        // use empty table instead of nil for non-optional table types
+        if (
+            !rosettaField?.defaultValue &&
+            (typeString === 'table' || typeString?.startsWith('table<')) &&
+            !typeString?.endsWith('?')
+        ) {
+            valueString = '{}'
+            hasTableLiteral = true
+        }
     }
 
     if (valueString === 'nil' && typeString === 'unknown?') {

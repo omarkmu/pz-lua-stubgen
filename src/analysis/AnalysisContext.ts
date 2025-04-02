@@ -1,6 +1,6 @@
 import ast from 'luaparse'
 import { LuaScope } from '../scopes'
-import { getLuaFieldKey, readLuaStringLiteral } from '../helpers'
+import { getLuaFieldKey, isEmptyClass, readLuaStringLiteral } from '../helpers'
 import {
     AssignmentItem,
     FunctionDefinitionItem,
@@ -31,6 +31,7 @@ import {
     LuaMember,
     AnalyzedTable,
     AnalysisContextArgs,
+    ReturnsItem,
 } from './types'
 
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
@@ -185,23 +186,31 @@ export class AnalysisContext {
                     return false
                 })
 
-                if (memberBase.length === 1) {
-                    // ignore __index in instances
-                    if (isInstance && lhs.member === '__index') {
-                        break
-                    }
-
-                    const key = this.getLiteralKey(lhs.member)
-                    this.addField(
-                        scope,
-                        memberBase[0],
-                        key,
-                        rhs,
-                        lhs,
-                        index,
-                        isInstance,
-                    )
+                if (memberBase.length !== 1) {
+                    break
                 }
+
+                // ignore __index in instances
+                if (isInstance && lhs.member === '__index') {
+                    break
+                }
+
+                // add original assignment name to tables
+                if (rhs.type === 'literal' && rhs.tableId) {
+                    const info = this.getTableInfo(rhs.tableId)
+                    info.originalName ??= this.getFieldClassName(scope, lhs)
+                }
+
+                const memberKey = this.getLiteralKey(lhs.member)
+                this.addField(
+                    scope,
+                    memberBase[0],
+                    memberKey,
+                    rhs,
+                    lhs,
+                    index,
+                    isInstance,
+                )
 
                 break
 
@@ -239,13 +248,38 @@ export class AnalysisContext {
 
             const classes: AnalyzedClass[] = []
             const tables: AnalyzedTable[] = []
-            for (const cls of mod.classes) {
-                const [finalized, isTable] = this.finalizeClass(cls, refMap)
+
+            let i = 0
+            const seenClasses = new Set<string>()
+            const readingClasses = [...mod.classes]
+            while (i < readingClasses.length) {
+                const cls = readingClasses[i]
+                seenClasses.add(cls.name)
+                const [finalized, isTable, extra] = this.finalizeClass(
+                    cls,
+                    refMap,
+                )
 
                 if (isTable) {
                     tables.push(finalized)
                 } else {
-                    classes.push(finalized as AnalyzedClass)
+                    readingClasses.push(
+                        ...extra.filter((x) => !seenClasses.has(x.name)),
+                    )
+
+                    const finalizedCls = finalized as AnalyzedClass
+
+                    // avoid writing unnecessary empty class annotations
+                    if (
+                        cls.definingModule &&
+                        cls.definingModule !== this.currentModule &&
+                        isEmptyClass(finalizedCls)
+                    ) {
+                        i++
+                        continue
+                    }
+
+                    classes.push(finalizedCls)
 
                     let list = clsMap.get(finalized.name)
                     if (!list) {
@@ -253,8 +287,10 @@ export class AnalysisContext {
                         clsMap.set(finalized.name, list)
                     }
 
-                    list.push(finalized as AnalyzedClass)
+                    list.push(finalizedCls)
                 }
+
+                i++
             }
 
             const fields: AnalyzedField[] = []
@@ -371,55 +407,7 @@ export class AnalysisContext {
                     item.classes.forEach((x) => classes.push(x))
                     item.requires.forEach((x) => requires.push(x))
                 case 'returns':
-                    if (item.returns === undefined) {
-                        break
-                    }
-
-                    const funcInfo = this.getFunctionInfo(item.id)
-
-                    funcInfo.minReturns = Math.min(
-                        funcInfo.minReturns ?? Number.MAX_VALUE,
-                        item.returns.length,
-                    )
-
-                    // don't add returns to a class constructor
-                    if (funcInfo.isConstructor) {
-                        break
-                    }
-
-                    for (let i = 0; i < item.returns.length; i++) {
-                        funcInfo.returnTypes[i] ??= new Set()
-                        funcInfo.returnExpressions[i] ??= new Set()
-
-                        let types: Set<string>
-                        if (item.type === 'returns') {
-                            const ret = item.returns[i]
-
-                            funcInfo.returnExpressions[i].add(ret)
-                            types = this.remapBooleans(
-                                this.resolveTypes({ expression: ret }),
-                            )
-                        } else {
-                            types = item.returns[i].types
-                        }
-
-                        types.forEach((x) => funcInfo.returnTypes[i].add(x))
-                    }
-
-                    const min = funcInfo.minReturns
-                    if (min === undefined) {
-                        continue
-                    }
-
-                    if (funcInfo.returnTypes.length <= min) {
-                        continue
-                    }
-
-                    // mark returns exceeding the minimum as nullable
-                    for (let i = min; i < funcInfo.returnTypes.length; i++) {
-                        funcInfo.returnTypes[i].add('nil')
-                    }
-
+                    this.resolveReturns(item)
                     break
             }
         }
@@ -466,6 +454,86 @@ export class AnalysisContext {
             returns,
             requires,
             seenClasses,
+        }
+    }
+
+    resolveReturns(item: ReturnsItem | ResolvedScopeItem) {
+        if (item.returns === undefined) {
+            return
+        }
+
+        const funcInfo = this.getFunctionInfo(item.id)
+
+        // don't add returns to a class constructor
+        if (funcInfo.isConstructor) {
+            funcInfo.minReturns = Math.min(
+                funcInfo.minReturns ?? Number.MAX_VALUE,
+                item.returns.length,
+            )
+
+            return
+        }
+
+        let fullReturnCount = item.returns.length
+        for (let i = 0; i < item.returns.length; i++) {
+            funcInfo.returnTypes[i] ??= new Set()
+            funcInfo.returnExpressions[i] ??= new Set()
+
+            if (item.type === 'resolved') {
+                item.returns[i].types.forEach((x) =>
+                    funcInfo.returnTypes[i].add(x),
+                )
+
+                continue
+            }
+
+            const ret = item.returns[i]
+            const isTailCall =
+                i === item.returns.length - 1 &&
+                ret.type === 'operation' &&
+                ret.operator === 'call'
+
+            if (isTailCall) {
+                const funcReturns = this.resolveFunctionReturnTypes(ret)
+                if (funcReturns) {
+                    fullReturnCount += funcReturns.length - 1
+                    funcInfo.returnExpressions[i].add(ret)
+
+                    for (let j = 0; j < funcReturns.length; j++) {
+                        funcInfo.returnTypes[i + j] ??= new Set()
+
+                        this.remapBooleans(funcReturns[j]).forEach((x) =>
+                            funcInfo.returnTypes[i + j].add(x),
+                        )
+                    }
+
+                    continue
+                }
+            }
+
+            funcInfo.returnExpressions[i].add(ret)
+            this.remapBooleans(this.resolveTypes({ expression: ret })).forEach(
+                (x) => funcInfo.returnTypes[i].add(x),
+            )
+        }
+
+        funcInfo.minReturns = Math.min(
+            funcInfo.minReturns ?? Number.MAX_VALUE,
+            fullReturnCount,
+        )
+
+        const min = funcInfo.minReturns
+        if (min === undefined) {
+            return
+        }
+
+        if (funcInfo.returnTypes.length <= min) {
+            return
+        }
+
+        // mark returns exceeding the minimum as nullable
+        for (let i = min; i < funcInfo.returnTypes.length; i++) {
+            funcInfo.returnTypes[i].add('nil')
         }
     }
 
@@ -763,6 +831,7 @@ export class AnalysisContext {
         const info = this.getTableInfo(tableId)
         info.className = name
         info.isAtomUI = true
+        info.isLocalClass = true
 
         for (const [field, defs] of literalInfo.definitions) {
             info.definitions.set(field, defs)
@@ -902,6 +971,95 @@ export class AnalysisContext {
             fromLiteral,
             definingModule: this.currentModule,
             functionLevel: !scope.id.startsWith('@module'),
+        })
+
+        if (info.className || !info.containerId) {
+            return
+        }
+
+        if (!lhs || (lhs.type !== 'member' && lhs.type !== 'index')) {
+            return
+        }
+
+        // function assignment to a member of a non-class contained by a class → create nested class
+        if (rhs.type !== 'literal' || !rhs.functionId) {
+            return
+        }
+
+        this.addImpliedClass(scope, lhs.base, id, info)
+
+        if (!info.className) {
+            return
+        }
+
+        // extract the field name
+        const endIdx = info.className.lastIndexOf('.')
+        const targetName = this.getLiteralKey(
+            info.className.slice(endIdx ? endIdx + 1 : 0),
+        )
+
+        // overwrite defs with reference to class
+        const containerInfo = this.getTableInfo(info.containerId)
+        if (!containerInfo.definitions.has(targetName)) {
+            return
+        }
+
+        fieldDefs = []
+        fieldDefs.push({
+            expression: {
+                type: 'literal',
+                luaType: 'table',
+                tableId: id,
+            },
+            definingModule: this.currentModule,
+        })
+
+        containerInfo.definitions.set(targetName, fieldDefs)
+    }
+
+    protected addImpliedClass(
+        scope: LuaScope,
+        base: LuaExpression,
+        tableId: string,
+        tableInfo: TableInfo,
+    ) {
+        let name: string | undefined
+        let generated = false
+        switch (base.type) {
+            case 'reference':
+                const localName = scope.localIdToName(base.id)
+                name = tableInfo.originalName ?? localName ?? base.id
+
+                generated =
+                    tableInfo.originalName !== undefined ||
+                    localName !== undefined
+
+                break
+
+            case 'member':
+                name =
+                    tableInfo.originalName ??
+                    this.getFieldClassName(scope, base)
+
+                generated = true
+                break
+        }
+
+        if (!name) {
+            return
+        }
+
+        tableInfo.className = name
+        tableInfo.isLocalClass = generated
+        tableInfo.definingModule ??= this.currentModule
+        scope.items.push({
+            type: 'partial',
+            classInfo: {
+                name,
+                tableId,
+                generated,
+                definingModule: tableInfo.definingModule,
+            },
         })
     }
 
@@ -1177,48 +1335,20 @@ export class AnalysisContext {
 
         info.parameterTypes.push(types)
 
-        // assume Class:new(...) returns Class
-        if (identExpr.member === 'new') {
-            info.returnTypes.push(new Set(types))
-            info.isConstructor = true
-
-            if (!tableInfo) {
-                return
-            }
-
-            // `:new` method without class → create class
-            if (!tableInfo.className && !tableInfo.fromHiddenClass) {
-                let name: string | undefined
-                let generated = false
-                switch (base.type) {
-                    case 'reference':
-                        const localName = scope.localIdToName(base.id)
-                        name = localName ?? base.id
-                        generated = localName !== undefined
-                        break
-
-                    case 'member':
-                        name = this.getFieldClassName(scope, base)
-                        generated = true
-                        break
-                }
-
-                if (!name) {
-                    return
-                }
-
-                tableInfo.className = name
-                scope.items.push({
-                    type: 'partial',
-                    classInfo: {
-                        name,
-                        tableId,
-                        generated,
-                        definingModule: this.currentModule,
-                    },
-                })
-            }
+        if (identExpr.member !== 'new') {
+            return
         }
+
+        // assume Class:new(...) returns Class
+        info.returnTypes.push(new Set(types))
+        info.isConstructor = true
+
+        if (!tableInfo || tableInfo.className || tableInfo.fromHiddenClass) {
+            return
+        }
+
+        // `:new` method without class → create class
+        this.addImpliedClass(scope, base, tableId, tableInfo)
     }
 
     protected checkClassTable(expr: LuaExpression): string | undefined {
@@ -1379,6 +1509,7 @@ export class AnalysisContext {
 
         tableInfo.className = name
         tableInfo.isClosureClass = true
+        tableInfo.isLocalClass = true
         scope.items.push({
             type: 'partial',
             classInfo: {
@@ -1497,6 +1628,7 @@ export class AnalysisContext {
             const newId = this.newTableID()
             const newInfo = this.getTableInfo(newId)
             newInfo.className = name
+            newInfo.isLocalClass = true
 
             scope.items.push({
                 type: 'partial',
@@ -1599,7 +1731,7 @@ export class AnalysisContext {
     protected finalizeClass(
         cls: ResolvedClassInfo,
         refs: Map<string, LuaExpression | null>,
-    ): [AnalyzedClass | AnalyzedTable, boolean] {
+    ): [AnalyzedClass | AnalyzedTable, boolean, ResolvedClassInfo[]] {
         const info = this.getTableInfo(cls.tableId)
         const isTable = info.emitAsTable ?? false
         const isClassDefiner = cls.definingModule === this.currentModule
@@ -1667,6 +1799,14 @@ export class AnalysisContext {
                     literalExpressions.set(keyName, value)
                 }
 
+                continue
+            }
+
+            const valueTypes = this.finalizeTypes(
+                this.resolveTypes({ expression: value }),
+            )
+
+            if (valueTypes.size === 1 && valueTypes.has('function')) {
                 continue
             }
 
@@ -1847,8 +1987,22 @@ export class AnalysisContext {
             })
         }
 
+        if (isTable) {
+            const finalized: AnalyzedTable = {
+                name: cls.name,
+                local: cls.generated || info.isLocalClass,
+                staticFields,
+                methods,
+                functions,
+                overloads,
+            }
+
+            return [finalized, true, []]
+        }
+
         // check for floating setters
         const seenIds = new Set<string>()
+        const extraClasses: ResolvedClassInfo[] = []
         while (checkSubfields.length > 0) {
             const [id, baseName] = checkSubfields.pop()!
             if (seenIds.has(id)) {
@@ -1873,6 +2027,18 @@ export class AnalysisContext {
                 })
 
                 if (definingExprs.length > 0) {
+                    // don't add setter fields for nested classes, signal to include the right class
+                    if (tableInfo.className) {
+                        extraClasses.push({
+                            name: tableInfo.className,
+                            tableId: tableInfo.id,
+                            definingModule: tableInfo.definingModule,
+                            generated: tableInfo.isLocalClass,
+                        })
+
+                        continue
+                    }
+
                     const [expression, types] = this.finalizeStaticField(
                         definingExprs,
                         refs,
@@ -1901,24 +2067,11 @@ export class AnalysisContext {
             }
         }
 
-        if (isTable) {
-            const finalized: AnalyzedTable = {
-                name: cls.name,
-                local: cls.generated,
-                staticFields,
-                methods,
-                functions,
-                overloads,
-            }
-
-            return [finalized, true]
-        }
-
         const finalized: AnalyzedClass = {
             name: cls.name,
             extends: cls.base,
             deriveName: cls.deriveName,
-            local: cls.generated,
+            local: cls.generated || info.isLocalClass,
             fields,
             literalFields,
             staticFields,
@@ -1930,7 +2083,7 @@ export class AnalysisContext {
             overloads,
         }
 
-        return [finalized, false]
+        return [finalized, false, extraClasses]
     }
 
     protected finalizeClassFields(
@@ -2679,6 +2832,7 @@ export class AnalysisContext {
             id,
             literalFields: [],
             definitions: new Map(),
+            definingModule: this.currentModule,
         }
 
         this.idToTableInfo.set(id, info)
@@ -2991,6 +3145,48 @@ export class AnalysisContext {
         return fieldTypes
     }
 
+    protected resolveFunctionReturnTypes(
+        op: LuaOperation,
+        seen?: Map<LuaExpressionInfo, Set<string>>,
+    ): Set<string>[] | undefined {
+        const func = op.arguments[0]
+        if (!func) {
+            return
+        }
+
+        const types: Set<string>[] = []
+        const knownTypes = new Set<string>()
+        if (this.addKnownReturns(func, knownTypes)) {
+            types.push(knownTypes)
+            return types
+        }
+
+        const resolvedFuncTypes = this.resolveTypes({ expression: func }, seen)
+        if (!resolvedFuncTypes || resolvedFuncTypes.size !== 1) {
+            return
+        }
+
+        const resolvedFunc = [...resolvedFuncTypes][0]
+        if (!resolvedFunc.startsWith('@function')) {
+            return
+        }
+
+        // handle constructors
+        const funcInfo = this.getFunctionInfo(resolvedFunc)
+        if (funcInfo.isConstructor) {
+            types.push(new Set())
+            types[0].add('@instance') // mark as an instance to correctly attribute fields
+            funcInfo.returnTypes[0]?.forEach((x) => types[0].add(x))
+            return types
+        }
+
+        for (let i = 0; i < funcInfo.returnTypes.length; i++) {
+            types.push(new Set(funcInfo.returnTypes[i]))
+        }
+
+        return types
+    }
+
     /**
      * Resolves the possible types for the result of an operation.
      * @param op The operation expression.
@@ -3012,38 +3208,12 @@ export class AnalysisContext {
 
         switch (op.operator) {
             case 'call':
-                const func = op.arguments[0]
-                if (!func) {
+                const returnTypes = this.resolveFunctionReturnTypes(op, seen)
+                if (returnTypes === undefined) {
                     break
                 }
 
-                if (this.addKnownReturns(func, types)) {
-                    break
-                }
-
-                const resolvedFuncTypes = this.resolveTypes(
-                    { expression: func },
-                    seen,
-                )
-
-                if (!resolvedFuncTypes || resolvedFuncTypes.size !== 1) {
-                    break
-                }
-
-                const resolvedFunc = [...resolvedFuncTypes][0]
-                if (!resolvedFunc.startsWith('@function')) {
-                    break
-                }
-
-                // handle constructors
-                const funcInfo = this.getFunctionInfo(resolvedFunc)
-                if (funcInfo.isConstructor) {
-                    types.add('@instance') // mark as an instance to correctly attribute fields
-                    funcInfo.returnTypes[0]?.forEach((x) => types.add(x))
-                    break
-                }
-
-                const returns = funcInfo.returnTypes[index - 1]
+                const returns = returnTypes[index - 1]
                 if (!returns) {
                     types.add('nil')
                     break

@@ -1,3 +1,4 @@
+export * from './analysis'
 export * from './annotation'
 export { arrayToRecord } from './array-to-record'
 export * from './convert-analyzed'

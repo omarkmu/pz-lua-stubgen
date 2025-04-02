@@ -14,7 +14,9 @@ export const convertAnalyzedClass = (
 ): WritableRosettaClass => {
     const rosettaCls: WritableRosettaClass = {
         name: cls.name,
-        extends: cls.extends ?? mergeCls?.extends,
+        extends: mergeCls?.extends?.includes(',')
+            ? mergeCls.extends
+            : (cls.extends ?? mergeCls?.extends),
         deprecated: mergeCls?.deprecated,
         mutable: mergeCls?.mutable,
         local: cls.local ? true : undefined,

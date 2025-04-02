@@ -59,6 +59,12 @@ export class RosettaUpdater extends RosettaGenerator {
         return modules
     }
 
+    protected shouldSkip(name: string, tags?: string[]) {
+        return (
+            tags?.includes('StubGen_Definition') || this.skipPattern?.test(name)
+        )
+    }
+
     protected async update(modules: AnalyzedModule[]) {
         for (const mod of modules) {
             if (this.extraFiles.has(mod.id)) {
@@ -128,6 +134,10 @@ export class RosettaUpdater extends RosettaGenerator {
 
         const toDelete = new Set<string>()
         for (const rosettaCls of Object.values(file.classes)) {
+            if (this.shouldSkip(rosettaCls.name, rosettaCls.tags)) {
+                continue
+            }
+
             const cls = clsMap.get(rosettaCls.name)
             if (!cls) {
                 if (this.deleteUnknown) {
@@ -250,6 +260,15 @@ export class RosettaUpdater extends RosettaGenerator {
         const toDelete = new Set<string>()
         const fieldMap = new Map(fields.map((x) => [x.name, x]))
         for (const [name, rosettaField] of Object.entries(rosettaFields)) {
+            if (this.shouldSkip(name, rosettaField.tags)) {
+                continue
+            }
+
+            // don't touch type fields; these aren't auto-generated
+            if (/^\[[a-zA-Z_.][\w.]*\]/.test(name)) {
+                continue
+            }
+
             let fullName = name
             if (parentName) {
                 fullName = `${parentName}.${name}`
@@ -303,6 +322,10 @@ export class RosettaUpdater extends RosettaGenerator {
         const toDelete = new Set<string>()
         const funcMap = new Map(funcs.map((x) => [x.name, x]))
         for (const rosettaFunc of Object.values(rosettaFuncs)) {
+            if (this.shouldSkip(rosettaFunc.name, rosettaFunc.tags)) {
+                continue
+            }
+
             let fullName = rosettaFunc.name
             if (parentName) {
                 const indexer = type === 'method' ? ':' : '.'
@@ -390,6 +413,10 @@ export class RosettaUpdater extends RosettaGenerator {
 
         const toDelete = new Set<string>()
         for (const rosettaTable of Object.values(file.tables)) {
+            if (this.shouldSkip(rosettaTable.name, rosettaTable.tags)) {
+                continue
+            }
+
             const table = tableMap.get(rosettaTable.name)
             if (!table) {
                 if (this.deleteUnknown) {

@@ -128,6 +128,7 @@ export interface RosettaAlias {
 export interface RosettaGenerateArgs extends BaseAnnotateArgs {
     format?: 'json' | 'yml'
     keepTypes?: boolean
+    skipPattern?: string
 }
 
 export interface RosettaUpdateArgs extends RosettaGenerateArgs {

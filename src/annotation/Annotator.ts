@@ -727,7 +727,7 @@ export class Annotator extends BaseAnnotator {
             )
 
             // skip `---@param x unknown` if there are no details
-            if (type === 'unknown' && !param.notes) {
+            if (param.name !== '...' && type === 'unknown' && !param.notes) {
                 continue
             }
 

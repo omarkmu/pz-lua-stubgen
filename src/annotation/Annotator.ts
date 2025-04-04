@@ -129,17 +129,30 @@ export class Annotator extends BaseAnnotator {
         func: AnalyzedFunction,
         isMethod: boolean,
     ) {
-        const rosettaParamCount = rosettaFunc.parameters?.length ?? 0
-        const luaParamCount = func.parameters.length
-        name ??= (rosettaFunc as RosettaFunction).name ?? func.name
+        const rosettaParams = rosettaFunc.parameters
+        const rosettaCount = rosettaParams?.length ?? 0
+        const luaCount = func.parameters.length
 
-        if (luaParamCount !== rosettaParamCount) {
-            log.warn(
-                `Rosetta ${isMethod ? 'method' : 'function'}` +
-                    ` '${name}' parameter count doesn't match.` +
-                    ` (lua: ${luaParamCount}, rosetta: ${rosettaParamCount})`,
-            )
+        if (luaCount === rosettaCount) {
+            return
         }
+
+        // `self` parameter annotation on a method is okay
+        if (
+            isMethod &&
+            rosettaCount === luaCount + 1 &&
+            rosettaParams &&
+            rosettaParams.find((x) => x.name === 'self')
+        ) {
+            return
+        }
+
+        name ??= (rosettaFunc as RosettaFunction).name ?? func.name
+        log.warn(
+            `Rosetta ${isMethod ? 'method' : 'function'}` +
+                ` '${name}' parameter count doesn't match` +
+                ` (lua: ${luaCount}, rosetta: ${rosettaCount})`,
+        )
     }
 
     protected async getKahluaModule(): Promise<AnalyzedModule | undefined> {
@@ -447,7 +460,7 @@ export class Annotator extends BaseAnnotator {
 
         if (rosettaFunc) {
             this.checkRosettaFunction(rosettaFunc, name, func, isMethod)
-            this.writeRosettaFunction(rosettaFunc, name, out, func)
+            this.writeRosettaFunction(rosettaFunc, name, func, isMethod, out)
             return
         }
 
@@ -699,8 +712,9 @@ export class Annotator extends BaseAnnotator {
     protected writeRosettaFunction(
         rosettaFunc: RosettaFunction | RosettaConstructor,
         name: string,
-        out: string[],
         func: AnalyzedFunction,
+        isMethod: boolean,
+        out: string[],
     ) {
         if ((rosettaFunc as RosettaFunction).deprecated) {
             out.push(`\n---@deprecated`)
@@ -708,7 +722,7 @@ export class Annotator extends BaseAnnotator {
 
         writeNotes(rosettaFunc.notes, out)
 
-        const params = rosettaFunc.parameters ?? []
+        let params = rosettaFunc.parameters ?? []
         for (let i = 0; i < params.length; i++) {
             const param = params[i]
             if (
@@ -768,6 +782,10 @@ export class Annotator extends BaseAnnotator {
             (rosettaFunc as RosettaFunction).overloads,
             out,
         )
+
+        if (isMethod) {
+            params = params.filter((x) => x.name !== 'self')
+        }
 
         out.push('\n')
         out.push(

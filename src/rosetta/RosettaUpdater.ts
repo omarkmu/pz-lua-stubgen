@@ -348,7 +348,13 @@ export class RosettaUpdater extends RosettaGenerator {
                 continue
             }
 
-            this.updateParameters(moduleId, `'${fullName}'`, func, rosettaFunc)
+            this.updateParameters(
+                moduleId,
+                `'${fullName}'`,
+                func,
+                rosettaFunc,
+                type === 'method',
+            )
         }
 
         for (const name of toDelete) {
@@ -361,11 +367,16 @@ export class RosettaUpdater extends RosettaGenerator {
         funcName: string,
         func: AnalyzedFunction,
         rosettaFunc: RosettaFunction | RosettaConstructor,
+        isMethod: boolean = false,
     ) {
         const params = rosettaFunc.parameters ?? []
 
         const unknown: RosettaParameter[] = []
         const paramSet = new Set(func.parameters.map((x) => x.name))
+        if (isMethod) {
+            paramSet.add('self')
+        }
+
         for (const param of params) {
             if (paramSet.has(param.name)) {
                 continue
@@ -387,6 +398,19 @@ export class RosettaUpdater extends RosettaGenerator {
 
         const updated: RosettaParameter[] = []
         const rosettaParamMap = new Map(params.map((x) => [x.name, x]))
+
+        const includeSelf =
+            isMethod &&
+            rosettaParamMap.has('self') &&
+            !func.parameters.find((x) => x.name === 'self')
+
+        if (includeSelf) {
+            func.parameters.unshift({
+                name: 'self',
+                types: new Set(),
+            })
+        }
+
         for (const param of func.parameters) {
             let rosettaParam = rosettaParamMap.get(param.name)
             if (!rosettaParam) {

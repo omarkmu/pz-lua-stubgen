@@ -547,7 +547,7 @@ export class Annotator extends BaseAnnotator {
             params.push(`${param.name}: ${getTypeString(param.types)}`)
         }
 
-        out.push(params.join())
+        out.push(params.join(', '))
         out.push(')')
 
         const returns: string[] = []
@@ -557,7 +557,7 @@ export class Annotator extends BaseAnnotator {
 
         if (returns.length > 0) {
             out.push(': ')
-            out.push(returns.join())
+            out.push(returns.join(', '))
         }
     }
 
@@ -601,7 +601,7 @@ export class Annotator extends BaseAnnotator {
                 params.push(`${param.name}: ${param.type}`)
             }
 
-            out.push(params.join())
+            out.push(params.join(', '))
             out.push(')')
 
             const returns: string[] = []
@@ -615,7 +615,7 @@ export class Annotator extends BaseAnnotator {
 
             if (returns.length > 0) {
                 out.push(': ')
-                out.push(returns.join())
+                out.push(returns.join(', '))
             }
         }
 

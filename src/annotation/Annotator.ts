@@ -1,9 +1,15 @@
 import path from 'path'
 import { BaseAnnotator } from '../base'
-import { AnnotateArgs } from './types'
+import { AnnotateArgs, InitializerSettings } from './types'
 import { log } from '../logger'
 
-import { AnalyzedField, AnalyzedFunction, AnalyzedModule } from '../analysis'
+import {
+    AnalyzedClass,
+    AnalyzedField,
+    AnalyzedFunction,
+    AnalyzedModule,
+    AnalyzedTable,
+} from '../analysis'
 
 import {
     RosettaClass,
@@ -13,6 +19,7 @@ import {
     RosettaFunction,
     RosettaOperator,
     RosettaOverload,
+    RosettaTable,
 } from '../rosetta'
 
 import {
@@ -196,15 +203,50 @@ export class Annotator extends BaseAnnotator {
         return '__' + name
     }
 
-    protected shouldSkipInitializer(name: string, tags: Set<string>) {
-        if (
-            tags.has('StubGen_NoInitializer') ||
-            this.helperPattern?.test(name)
-        ) {
-            return true
+    protected getInitializerSettings(
+        element: AnalyzedTable | AnalyzedClass,
+        rosettaElement?: RosettaTable | RosettaClass,
+        isTable: boolean = false,
+    ): InitializerSettings {
+        // tag → force skip
+        const tags = new Set(rosettaElement?.tags ?? [])
+        if (tags.has('StubGen_NoInitializer')) {
+            return {
+                skipInitializer: true,
+                forceLocal: false,
+            }
         }
 
-        return false
+        if (!this.helperPattern?.test(element.name)) {
+            return {
+                skipInitializer: false,
+                forceLocal: false,
+            }
+        }
+
+        // helper → skip unless forced by content
+        // if forced by content, write as local
+        const cls = element as AnalyzedClass
+        const isForced =
+            element.functions.length > 0 ||
+            element.methods.length > 0 ||
+            element.staticFields.length > 0 ||
+            (!isTable &&
+                (cls.constructors.length > 0 ||
+                    cls.functionConstructors.length > 0 ||
+                    cls.setterFields.length > 0))
+
+        if (isForced) {
+            return {
+                skipInitializer: false,
+                forceLocal: true,
+            }
+        }
+
+        return {
+            skipInitializer: true,
+            forceLocal: false,
+        }
     }
 
     protected async transformModules(modules: AnalyzedModule[]) {
@@ -263,10 +305,16 @@ export class Annotator extends BaseAnnotator {
         for (const cls of mod.classes) {
             writtenCount++
             const rosettaClass = rosettaFile?.classes[cls.name]
-            const tags = new Set(rosettaClass?.tags ?? [])
-            const noInitializer = this.shouldSkipInitializer(cls.name, tags)
+            const { skipInitializer, forceLocal } = this.getInitializerSettings(
+                cls,
+                rosettaClass,
+            )
 
-            const identName = this.getSafeIdentifier(cls.name, cls.local)
+            const identName = this.getSafeIdentifier(
+                cls.name,
+                cls.local || forceLocal,
+            )
+
             const base = rosettaClass?.extends ?? cls.extends
 
             const writtenFields = new Set<string>()
@@ -331,11 +379,11 @@ export class Annotator extends BaseAnnotator {
                 out.push('\n---@field [any] any')
             }
 
-            if (!noInitializer) {
+            if (!skipInitializer) {
                 // definition
                 out.push('\n')
 
-                if (cls.local) {
+                if (cls.local || forceLocal) {
                     out.push('local ')
                 }
 
@@ -805,13 +853,19 @@ export class Annotator extends BaseAnnotator {
         for (const table of mod.tables) {
             writtenCount++
             const rosettaTable = rosettaFile?.tables?.[table.name]
-            const tags = new Set(rosettaTable?.tags ?? [])
 
-            const identName = table.local
-                ? this.getSafeIdentifier(table.name)
-                : table.name
+            const { skipInitializer, forceLocal } = this.getInitializerSettings(
+                table,
+                rosettaTable,
+                true,
+            )
 
-            if (!this.shouldSkipInitializer(table.name, tags)) {
+            const identName =
+                table.local || forceLocal
+                    ? this.getSafeIdentifier(table.name)
+                    : table.name
+
+            if (!skipInitializer) {
                 writeNotes(rosettaTable?.notes, out)
                 this.writeRosettaOperators(rosettaTable?.operators, out)
 

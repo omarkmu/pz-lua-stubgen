@@ -3,6 +3,7 @@ const argNamePattern = /^(?:target|(?:param|arg)\d+)$/
 export const getHeuristicTypes = (
     name: string,
     types: Set<string>,
+    containerName?: string,
 ): Set<string> => {
     const checkTypes = new Set(types)
     const nullable = checkTypes.delete('nil')
@@ -25,7 +26,20 @@ export const getHeuristicTypes = (
             break
 
         case 'BUTTON':
-            heuristicTypes.add('ISButton')
+            if (!containerName) {
+                break
+            }
+
+            if (containerName?.includes('onJoypad')) {
+                heuristicTypes.add('integer')
+            } else {
+                heuristicTypes.add('ISButton')
+            }
+
+            break
+
+        case 'JOYPADINDEX':
+            heuristicTypes.add('integer')
             break
 
         case 'TITLEBARBKG':

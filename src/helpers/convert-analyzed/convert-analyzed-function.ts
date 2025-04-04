@@ -20,6 +20,7 @@ export const convertAnalyzedFunction = (
             mergeFunc?.parameters,
             keepTypes,
             applyHeuristics,
+            func.name,
         ),
         return: convertAnalyzedReturns(
             func.returnTypes,

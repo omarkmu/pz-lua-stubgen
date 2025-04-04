@@ -7,6 +7,7 @@ export const convertAnalyzedParameters = (
     mergeParams?: RosettaParameter[],
     keepTypes?: boolean,
     applyHeuristics?: boolean,
+    containerName?: string,
 ): RosettaParameter[] => {
     const converted = params.map((x, i) =>
         convertAnalyzedParameter(
@@ -14,6 +15,7 @@ export const convertAnalyzedParameters = (
             mergeParams?.[i],
             keepTypes,
             applyHeuristics,
+            containerName,
         ),
     )
 

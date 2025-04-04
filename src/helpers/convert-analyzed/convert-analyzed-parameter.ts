@@ -9,11 +9,12 @@ export const convertAnalyzedParameter = (
     mergeParam?: RosettaParameter,
     keepTypes?: boolean,
     applyHeuristics?: boolean,
+    containerName?: string,
 ): RosettaParameter => {
     const rosettaParam: RosettaParameter = { name: param.name }
 
     const paramTypes = applyHeuristics
-        ? getHeuristicTypes(param.name, param.types)
+        ? getHeuristicTypes(param.name, param.types, containerName)
         : param.types
 
     const [type, nullable] = convertAnalyzedTypes(paramTypes)

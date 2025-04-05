@@ -60,9 +60,7 @@ export class RosettaUpdater extends RosettaGenerator {
     }
 
     protected shouldSkip(name: string, tags?: string[]) {
-        return (
-            tags?.includes('StubGen_Definition') || this.skipPattern?.test(name)
-        )
+        return tags?.includes('StubGen_Extra') || this.skipPattern?.test(name)
     }
 
     protected async update(modules: AnalyzedModule[]) {

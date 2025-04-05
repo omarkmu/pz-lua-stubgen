@@ -69,6 +69,9 @@ export class Annotator extends BaseAnnotator {
         const out = [(mod.prefix ?? PREFIX) + '\n']
 
         const rosettaFile = this.rosetta.files[mod.id]
+        if (rosettaFile?.tags.has('StubGen_Hidden')) {
+            return out[0]
+        }
 
         this.writeAliases(out, rosettaFile)
 
@@ -274,11 +277,15 @@ export class Annotator extends BaseAnnotator {
         let writtenCount = 0
         for (const alias of rosettaFile.aliases) {
             writtenCount++
-            const types = alias.types
+
+            if (out.length > 1) {
+                out.push('\n')
+            }
 
             out.push(`\n---@alias ${alias.name}`)
 
             // simple alias
+            const types = alias.types
             if (types.length === 1 && !types[0].notes) {
                 out.push(` ${types[0].type}`)
                 continue
@@ -304,8 +311,12 @@ export class Annotator extends BaseAnnotator {
     ): boolean {
         let writtenCount = 0
         for (const cls of mod.classes) {
-            writtenCount++
             const rosettaClass = rosettaFile?.classes[cls.name]
+            if (rosettaClass?.tags?.includes('StubGen_Hidden')) {
+                continue
+            }
+
+            writtenCount++
             const { skipInitializer, forceLocal } = this.getInitializerSettings(
                 cls,
                 rosettaClass,
@@ -344,48 +355,7 @@ export class Annotator extends BaseAnnotator {
                 }
             }
 
-            const sortedFields = this.alphabetize
-                ? [...cls.fields].sort((a, b) => a.name.localeCompare(b.name))
-                : cls.fields
-
-            // fields
-            for (const field of sortedFields) {
-                const rosettaField = rosettaClass?.fields?.[field.name]
-
-                writtenFields.add(field.name)
-
-                let typeString: string
-                let notes: string
-                if (rosettaField) {
-                    typeString = getRosettaTypeString(
-                        rosettaField.type,
-                        rosettaField.nullable,
-                    )
-
-                    notes = rosettaField.notes ?? ''
-                } else {
-                    typeString = getTypeString(field.types, this.allowAmbiguous)
-                    notes = ''
-                }
-
-                if (notes) {
-                    notes = ' ' + getInlineNotes(notes)
-                }
-
-                let scope = ''
-                if (SCOPES.has(field.name) && !/^[a-zA-Z_]/.test(typeString)) {
-                    scope = 'public '
-                }
-
-                out.push(
-                    `\n---@field ${scope}${field.name} ${typeString}${notes}`,
-                )
-            }
-
-            const mutable = rosettaClass?.mutable
-            if (mutable || (!this.strictFields && mutable !== false)) {
-                out.push('\n---@field [any] any')
-            }
+            this.writeClassFields(cls, writtenFields, out, rosettaClass)
 
             if (!skipInitializer) {
                 // definition
@@ -474,6 +444,58 @@ export class Annotator extends BaseAnnotator {
         return writtenCount > 0
     }
 
+    protected writeClassFields(
+        cls: AnalyzedClass,
+        writtenFields: Set<string>,
+        out: string[],
+        rosettaClass?: RosettaClass,
+    ) {
+        const sortedFields = this.alphabetize
+            ? [...cls.fields].sort((a, b) => a.name.localeCompare(b.name))
+            : cls.fields
+
+        // fields
+        for (const field of sortedFields) {
+            const rosettaField = rosettaClass?.fields?.[field.name]
+
+            if (rosettaField?.tags?.includes('StubGen_Hidden')) {
+                continue
+            }
+
+            writtenFields.add(field.name)
+
+            let typeString: string
+            let notes: string
+            if (rosettaField) {
+                typeString = getRosettaTypeString(
+                    rosettaField.type,
+                    rosettaField.nullable,
+                )
+
+                notes = rosettaField.notes ?? ''
+            } else {
+                typeString = getTypeString(field.types, this.allowAmbiguous)
+                notes = ''
+            }
+
+            if (notes) {
+                notes = ' ' + getInlineNotes(notes)
+            }
+
+            let scope = ''
+            if (SCOPES.has(field.name) && !/^[a-zA-Z_]/.test(typeString)) {
+                scope = ' public'
+            }
+
+            out.push(`\n---@field${scope} ${field.name} ${typeString}${notes}`)
+        }
+
+        const mutable = rosettaClass?.mutable
+        if (mutable || (!this.strictFields && mutable !== false)) {
+            out.push('\n---@field [any] any')
+        }
+    }
+
     protected writeClassFunctions(
         name: string,
         functions: AnalyzedFunction[],
@@ -509,7 +531,12 @@ export class Annotator extends BaseAnnotator {
         isMethod: boolean,
         out: string[],
         rosettaFunc: RosettaFunction | RosettaConstructor | undefined,
-    ) {
+    ): boolean {
+        const tags = (rosettaFunc as RosettaFunction)?.tags
+        if (tags?.includes('StubGen_Hidden')) {
+            return false
+        }
+
         if (out.length > 1) {
             out.push('\n')
         }
@@ -517,7 +544,7 @@ export class Annotator extends BaseAnnotator {
         if (rosettaFunc) {
             this.checkRosettaFunction(rosettaFunc, name, func, isMethod)
             this.writeRosettaFunction(rosettaFunc, name, func, isMethod, out)
-            return
+            return true
         }
 
         const prefix = getFunctionPrefix(
@@ -532,6 +559,7 @@ export class Annotator extends BaseAnnotator {
 
         out.push('\n')
         out.push(getFunctionString(name, func.parameters))
+        return true
     }
 
     protected writeGlobalFunctions(
@@ -539,12 +567,13 @@ export class Annotator extends BaseAnnotator {
         out: string[],
         rosettaFile: RosettaFile | undefined,
     ): boolean {
+        const initialLen = out.length
         for (const func of mod.functions) {
             const rosettaFunc = rosettaFile?.functions[func.name]
             this.writeFunction(func, func.name, false, out, rosettaFunc)
         }
 
-        return mod.functions.length > 0
+        return out.length !== initialLen
     }
 
     protected writeOverload(overload: AnalyzedFunction, out: string[]) {
@@ -577,8 +606,13 @@ export class Annotator extends BaseAnnotator {
             return false
         }
 
+        const initialLen = out.length
         for (const op of operators) {
             if (!op.operation || !op.return) {
+                continue
+            }
+
+            if (op.tags?.includes('StubGen_Hidden')) {
                 continue
             }
 
@@ -590,7 +624,7 @@ export class Annotator extends BaseAnnotator {
             out.push(`: ${op.return}`)
         }
 
-        return true
+        return out.length !== initialLen
     }
 
     protected writeRosettaOverloads(
@@ -652,6 +686,10 @@ export class Annotator extends BaseAnnotator {
             }
         }
 
+        if (returns.length === 0) {
+            return false
+        }
+
         locals.forEach((x) => out.push(x))
 
         out.push('\nreturn ')
@@ -667,6 +705,10 @@ export class Annotator extends BaseAnnotator {
         baseName?: string | undefined,
         writtenFields?: Set<string>,
     ) {
+        if (rosettaField?.tags?.includes('StubGen_Hidden')) {
+            return
+        }
+
         if (writtenFields) {
             if (writtenFields.has(field.name)) {
                 return
@@ -753,6 +795,10 @@ export class Annotator extends BaseAnnotator {
             }
 
             const rosettaField = rosettaFile?.fields[field.name]
+            if (rosettaField?.tags?.includes('StubGen_Hidden')) {
+                continue
+            }
+
             if (out.length > 1 && !rosettaField?.notes) {
                 out.push('\n')
             }
@@ -859,8 +905,12 @@ export class Annotator extends BaseAnnotator {
     ): boolean {
         let writtenCount = 0
         for (const table of mod.tables) {
-            writtenCount++
             const rosettaTable = rosettaFile?.tables?.[table.name]
+            if (rosettaTable?.tags?.includes('StubGen_Hidden')) {
+                continue
+            }
+
+            writtenCount++
 
             const { skipInitializer, forceLocal } = this.getInitializerSettings(
                 table,

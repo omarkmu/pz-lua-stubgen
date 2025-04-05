@@ -40,6 +40,7 @@ import {
 } from '../helpers'
 
 const PREFIX = '---@meta'
+const SCOPES = new Set(['public', 'private', 'protected', 'package'])
 
 /**
  * Handles annotation of Lua files.
@@ -371,7 +372,14 @@ export class Annotator extends BaseAnnotator {
                     notes = ' ' + getInlineNotes(notes)
                 }
 
-                out.push(`\n---@field ${field.name} ${typeString}${notes}`)
+                let scope = ''
+                if (SCOPES.has(field.name) && !/^[a-zA-Z_]/.test(typeString)) {
+                    scope = 'public '
+                }
+
+                out.push(
+                    `\n---@field ${scope}${field.name} ${typeString}${notes}`,
+                )
             }
 
             const mutable = rosettaClass?.mutable

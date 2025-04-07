@@ -29,3 +29,8 @@ export interface AnnotateArgs extends BaseAnnotateArgs {
      */
     helperPattern?: string
 }
+
+export interface InitializerSettings {
+    skipInitializer: boolean
+    forceLocal: boolean
+}

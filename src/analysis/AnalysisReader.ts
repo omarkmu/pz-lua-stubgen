@@ -206,7 +206,12 @@ export class AnalysisReader extends BaseReader {
             index,
         })
 
-        if (node.type === 'LocalStatement') {
+        const checkNewAssign =
+            node.type === 'LocalStatement' ||
+            (lhsExpression.type === 'reference' &&
+                lhsExpression.id.startsWith('@'))
+
+        if (checkNewAssign) {
             this.handleNewAssignment(scope, lhsExpression, rhsExpression)
         }
     }

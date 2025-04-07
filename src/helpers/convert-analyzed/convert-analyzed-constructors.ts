@@ -26,6 +26,7 @@ export const convertAnalyzedConstructors = (
                 mergeCons?.parameters,
                 keepTypes,
                 applyHeuristics,
+                'new',
             )
         } else if (mergeCons?.parameters && mergeCons.parameters.length > 0) {
             cons.parameters = mergeCons.parameters

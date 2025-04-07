@@ -32,6 +32,7 @@ import {
     AnalyzedTable,
     AnalysisContextArgs,
     ReturnsItem,
+    ResolvedFieldInfo,
 } from './types'
 
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
@@ -298,6 +299,10 @@ export class AnalysisContext {
                 fields.push(this.finalizeRequire(req))
             }
 
+            for (const field of mod.fields) {
+                fields.push(field)
+            }
+
             const functions: AnalyzedFunction[] = []
             for (const func of mod.functions) {
                 functions.push(
@@ -373,6 +378,7 @@ export class AnalysisContext {
         const classes: ResolvedClassInfo[] = []
         const functions: ResolvedFunctionInfo[] = []
         const requires: ResolvedRequireInfo[] = []
+        const fields: ResolvedFieldInfo[] = []
         const seenClasses = new Set<string>()
 
         let hasReturn = false
@@ -396,6 +402,10 @@ export class AnalysisContext {
                         requires.push(item.requireInfo)
                     }
 
+                    if (item.fieldInfo) {
+                        fields.push(item.fieldInfo)
+                    }
+
                     if (item.seenClassId) {
                         seenClasses.add(item.seenClassId)
                     }
@@ -406,6 +416,7 @@ export class AnalysisContext {
                     item.functions.forEach((x) => functions.push(x))
                     item.classes.forEach((x) => classes.push(x))
                     item.requires.forEach((x) => requires.push(x))
+                    item.fields.forEach((x) => fields.push(x))
                 case 'returns':
                     this.resolveReturns(item)
                     break
@@ -453,6 +464,7 @@ export class AnalysisContext {
             functions,
             returns,
             requires,
+            fields,
             seenClasses,
         }
     }
@@ -3573,6 +3585,25 @@ export class AnalysisContext {
         // global table or derive call → class
         if (tableId) {
             const tableInfo = this.getTableInfo(tableId)
+
+            // assignment to existing class table → add a field instead
+            if (
+                tableInfo.className &&
+                !tableInfo.isEmptyClass &&
+                rhs.type !== 'literal' &&
+                rhs.type !== 'operation'
+            ) {
+                scope.items.push({
+                    type: 'partial',
+                    fieldInfo: {
+                        name: lhs.id,
+                        types: new Set([tableInfo.className]),
+                    },
+                })
+
+                return
+            }
+
             tableInfo.className ??= lhs.id
             tableInfo.definingModule ??= this.currentModule
 

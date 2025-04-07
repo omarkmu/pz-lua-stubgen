@@ -172,6 +172,12 @@ export interface ResolvedFunctionInfo {
     functionId: string
 }
 
+export interface ResolvedFieldInfo {
+    name: string
+
+    types: Set<string>
+}
+
 export interface ResolvedRequireInfo {
     name: string
 
@@ -191,6 +197,8 @@ export interface ResolvedScopeItem extends BaseAnalysisItem {
 
     requires: ResolvedRequireInfo[]
 
+    fields: ResolvedFieldInfo[]
+
     seenClasses: Set<string>
 }
 
@@ -209,6 +217,8 @@ export interface PartialItem extends BaseAnalysisItem {
     functionInfo?: ResolvedFunctionInfo
 
     requireInfo?: ResolvedRequireInfo
+
+    fieldInfo?: ResolvedFieldInfo
 }
 
 export interface LuaExpressionInfo {

@@ -2,6 +2,26 @@ import { LuaExpression } from '../../analysis'
 import { RosettaField } from '../../rosetta'
 import { getExpressionString } from './get-expression-string'
 
+const isRequiredTableType = (type?: string): boolean => {
+    if (!type) {
+        return false
+    }
+
+    if (type.endsWith('?')) {
+        return false
+    }
+
+    if (type === 'table' || type.startsWith('table<')) {
+        return true
+    }
+
+    if (type.endsWith('[]') && !type.includes('|')) {
+        return true
+    }
+
+    return false
+}
+
 export const getValueString = (
     expression: LuaExpression | undefined,
     rosettaField: RosettaField | undefined,
@@ -21,11 +41,7 @@ export const getValueString = (
         valueString = 'nil'
 
         // use empty table instead of nil for non-optional table types
-        if (
-            !rosettaField?.defaultValue &&
-            (typeString === 'table' || typeString?.startsWith('table<')) &&
-            !typeString?.endsWith('?')
-        ) {
+        if (!rosettaField?.defaultValue && isRequiredTableType(typeString)) {
             valueString = '{}'
             hasTableLiteral = true
         }

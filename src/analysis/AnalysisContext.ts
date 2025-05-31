@@ -38,6 +38,7 @@ import {
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
 const POS_SIZE_NAMES = new Set(['x', 'y', 'z', 'w', 'h', 'width', 'height'])
 const DX_DY_NAMES = new Set(['dx', 'dy'])
+const UNKNOWN_NAMES = /^(?:target|(?:param|arg)\d+)$/
 
 /**
  * Shared context for analysis of multiple Lua files.
@@ -607,69 +608,7 @@ export class AnalysisContext {
         )
 
         if (this.applyHeuristics) {
-            const checkNames = info.parameterNames.map((x) =>
-                x.startsWith('_') ? x.slice(1) : x,
-            )
-
-            let dxDyCount = 0
-            let posSizeCount = 0
-            let rgbaCount = 0
-
-            for (const name of checkNames) {
-                if (DX_DY_NAMES.has(name)) {
-                    // both of dx, dy → assume number
-                    dxDyCount++
-                } else if (POS_SIZE_NAMES.has(name)) {
-                    // 2+ of {x, y, z, w, h, width, height} → assume number
-                    posSizeCount++
-                } else if (RGBA_NAMES.has(name)) {
-                    // 3+ of {r, g, b, a} → assume number
-                    rgbaCount++
-                }
-            }
-
-            for (let i = 0; i < info.parameters.length; i++) {
-                const name = checkNames[i]
-                const assumeNum =
-                    (posSizeCount >= 2 && POS_SIZE_NAMES.has(name)) ||
-                    (rgbaCount >= 3 && RGBA_NAMES.has(name)) ||
-                    (dxDyCount >= 2 && DX_DY_NAMES.has(name))
-
-                if (assumeNum) {
-                    info.parameterTypes[i] ??= new Set()
-                    info.parameterTypes[i].add('number')
-                    continue
-                }
-
-                const third = name.slice(2, 3)
-                if (name.startsWith('is') && third.toUpperCase() === third) {
-                    info.parameterTypes[i] ??= new Set()
-                    info.parameterTypes[i].add('boolean')
-                    continue
-                }
-
-                const upper = name.toUpperCase()
-                if (upper.startsWith('DO')) {
-                    continue
-                }
-
-                if (upper.startsWith('NUM') || upper.endsWith('NUM')) {
-                    // starts or ends with num → assume number
-                    info.parameterTypes[i] ??= new Set()
-                    info.parameterTypes[i].add('number')
-                    continue
-                }
-
-                if (
-                    upper.endsWith('STR') ||
-                    upper.endsWith('NAME') ||
-                    upper.endsWith('TITLE')
-                ) {
-                    // ends with name, title, or str → assume string
-                    info.parameterTypes[i] ??= new Set()
-                    info.parameterTypes[i].add('string')
-                }
-            }
+            this.applyParamNameHeuristics(info)
         }
 
         for (const param of info.parameters) {
@@ -1216,6 +1155,81 @@ export class AnalysisContext {
         for (let i = item.arguments.length; i < parameterTypes.length; i++) {
             parameterTypes[i] ??= new Set()
             parameterTypes[i].add('nil')
+        }
+    }
+
+    protected applyParamNameHeuristics(info: FunctionInfo) {
+        const checkNames = info.parameterNames.map((x) =>
+            x.startsWith('_') ? x.slice(1) : x,
+        )
+
+        let dxDyCount = 0
+        let posSizeCount = 0
+        let rgbaCount = 0
+
+        for (const name of checkNames) {
+            if (DX_DY_NAMES.has(name)) {
+                // both of dx, dy → assume number
+                dxDyCount++
+            } else if (POS_SIZE_NAMES.has(name)) {
+                // 2+ of {x, y, z, w, h, width, height} → assume number
+                posSizeCount++
+            } else if (RGBA_NAMES.has(name)) {
+                // 3+ of {r, g, b, a} → assume number
+                rgbaCount++
+            }
+        }
+
+        for (let i = 0; i < info.parameters.length; i++) {
+            const name = checkNames[i]
+            const assumeNum =
+                (posSizeCount >= 2 && POS_SIZE_NAMES.has(name)) ||
+                (rgbaCount >= 3 && RGBA_NAMES.has(name)) ||
+                (dxDyCount >= 2 && DX_DY_NAMES.has(name))
+
+            if (assumeNum) {
+                info.parameterTypes[i] ??= new Set()
+                info.parameterTypes[i].add('number')
+                continue
+            }
+
+            // isX → boolean
+            const third = name.slice(2, 3)
+            if (name.startsWith('is') && third.toUpperCase() === third) {
+                info.parameterTypes[i] ??= new Set()
+                info.parameterTypes[i].add('boolean')
+                continue
+            }
+
+            // avoid heuristics for doTitle
+            const upper = name.toUpperCase()
+            if (upper.startsWith('DO')) {
+                continue
+            }
+
+            // starts or ends with num → assume number
+            if (upper.startsWith('NUM') || upper.endsWith('NUM')) {
+                info.parameterTypes[i] ??= new Set()
+                info.parameterTypes[i].add('number')
+                continue
+            }
+
+            // ends with name, title, or str → assume string
+            if (
+                upper.endsWith('STR') ||
+                upper.endsWith('NAME') ||
+                upper.endsWith('TITLE')
+            ) {
+                info.parameterTypes[i] ??= new Set()
+                info.parameterTypes[i].add('string')
+                continue
+            }
+
+            // target, paramN, argN → unknown
+            if (UNKNOWN_NAMES.test(name)) {
+                info.parameterTypes[i] ??= new Set()
+                info.parameterTypes[i].add('unknown')
+            }
         }
     }
 
@@ -2545,6 +2559,16 @@ export class AnalysisContext {
     }
 
     protected finalizeTypes(types: Set<string>): Set<string> {
+        // treat explicit unknowns as just unknown
+        if (types.has('unknown')) {
+            const noTypes = new Set<string>()
+            if (types.has('nil')) {
+                noTypes.add('nil')
+            }
+
+            return noTypes
+        }
+
         const finalizedTypes = new Set(
             [...types]
                 .map((type) => {

@@ -1,5 +1,3 @@
-const argNamePattern = /^(?:target|(?:param|arg)\d+)$/
-
 export const getHeuristicTypes = (
     name: string,
     types: Set<string>,
@@ -85,15 +83,6 @@ export const getHeuristicTypes = (
         case 'KEY':
             if (checkTypes.size === 0 || checkTypes.has('number')) {
                 heuristicTypes.add('integer')
-            }
-
-            break
-
-        default:
-            // remove types for `target`, `paramN`, and `argN`
-            // types determined from usage are likely too narrow
-            if (argNamePattern.test(name)) {
-                heuristicTypes.add('unknown')
             }
 
             break

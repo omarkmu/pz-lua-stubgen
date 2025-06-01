@@ -483,7 +483,7 @@ export class AnalysisReader extends BaseReader {
                 const ident = node.identifier
                 const name =
                     ident?.type === 'Identifier' ? ident.name : undefined
-                const functionId = this.context.getFunctionID(node, name)
+                const functionId = this.context.getFunctionId(node, name)
                 return {
                     type: 'literal',
                     luaType: 'function',
@@ -491,7 +491,7 @@ export class AnalysisReader extends BaseReader {
                 }
 
             case 'TableConstructorExpression':
-                const tableId = this.context.getTableID(node)
+                const tableId = this.context.getTableId(node)
                 const fields = this.analyzeTableFields(node, scope)
                 this.context.setTableLiteralFields(scope, tableId, fields)
 
@@ -730,7 +730,7 @@ export class AnalysisReader extends BaseReader {
         const ident = node.identifier
         const name = ident?.type === 'Identifier' ? ident.name : undefined
 
-        const id = this.context.getFunctionID(node, name)
+        const id = this.context.getFunctionId(node, name)
         scope.id = id
 
         const isLocal = node.isLocal || parent.hasLocal(name)

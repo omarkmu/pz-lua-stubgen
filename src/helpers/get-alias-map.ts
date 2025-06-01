@@ -1,7 +1,7 @@
 import { getAliases } from './get-aliases'
 
 /**
- * Gets a mapping of files to potential aliases for requiring them.
+ * Gets a mapping of file aliases to file identifiers.
  */
 export const getAliasMap = (
     fileSet: Iterable<string>,

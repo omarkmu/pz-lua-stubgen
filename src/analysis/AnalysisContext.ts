@@ -6,8 +6,6 @@ import {
     FunctionDefinitionItem,
     LuaExpression,
     LuaExpressionInfo,
-    LuaLiteral,
-    LuaOperation,
     LuaType,
     RequireAssignmentItem,
     ResolvedClassInfo,
@@ -34,6 +32,7 @@ import {
     ReturnsItem,
     ResolvedFieldInfo,
 } from './types'
+import { TypeResolver } from './TypeResolver'
 
 const RGBA_NAMES = new Set(['r', 'g', 'b', 'a'])
 const POS_SIZE_NAMES = new Set(['x', 'y', 'z', 'w', 'h', 'width', 'height'])
@@ -44,6 +43,8 @@ const UNKNOWN_NAMES = /^(?:target|(?:param|arg)\d+)$/
  * Shared context for analysis of multiple Lua files.
  */
 export class AnalysisContext {
+    typeResolver: TypeResolver
+
     protected nextTableIndex: number = 1
     protected nextFunctionIndex: number = 1
 
@@ -76,12 +77,12 @@ export class AnalysisContext {
     /**
      * Maps function declarations to function IDs.
      */
-    protected functionToID: Map<ast.FunctionDeclaration, string>
+    protected functionToId: Map<ast.FunctionDeclaration, string>
 
     /**
      * Maps table constructor expressions to table IDs.
      */
-    protected tableToID: Map<ast.TableConstructorExpression, string>
+    protected tableToId: Map<ast.TableConstructorExpression, string>
 
     /**
      * Maps parameter IDs to function IDs.
@@ -96,14 +97,15 @@ export class AnalysisContext {
     constructor(args: AnalysisContextArgs) {
         this.currentModule = ''
         this.aliasMap = new Map()
-        this.tableToID = new Map()
-        this.functionToID = new Map()
+        this.tableToId = new Map()
+        this.functionToId = new Map()
         this.idToTableInfo = new Map()
         this.idToFunctionInfo = new Map()
         this.parameterToFunctionId = new Map()
         this.definitions = new Map()
         this.usageTypes = new Map()
         this.modules = new Map()
+        this.typeResolver = new TypeResolver(this)
 
         this.isRosettaInit = args.isRosettaInit ?? false
         this.applyHeuristics = args.heuristics ?? false
@@ -155,14 +157,14 @@ export class AnalysisContext {
 
             case 'index':
                 const indexBase = [
-                    ...this.resolveTypes({ expression: lhs.base }),
+                    ...this.typeResolver.resolve({ expression: lhs.base }),
                 ]
 
                 if (indexBase.length !== 1) {
                     break
                 }
 
-                const resolved = this.resolveBasicLiteral(lhs.index)
+                const resolved = this.typeResolver.resolveToLiteral(lhs.index)
                 if (!resolved || !resolved.literal) {
                     break
                 }
@@ -178,7 +180,7 @@ export class AnalysisContext {
             case 'member':
                 let isInstance = false
                 const memberBase = [
-                    ...this.resolveTypes({ expression: lhs.base }),
+                    ...this.typeResolver.resolve({ expression: lhs.base }),
                 ].filter((x) => {
                     if (!x.startsWith('@self') && !x.startsWith('@instance')) {
                         return true
@@ -335,31 +337,134 @@ export class AnalysisContext {
     }
 
     /**
+     * Gets the list of definitions for an item ID.
+     */
+    getDefinitions(id: string): LuaExpressionInfo[] {
+        return this.definitions.get(id) ?? []
+    }
+
+    /**
      * Gets the ID to use for a function.
      */
-    getFunctionID(expr: ast.FunctionDeclaration, name?: string): string {
-        let id = this.functionToID.get(expr)
+    getFunctionId(expr: ast.FunctionDeclaration, name?: string): string {
+        let id = this.functionToId.get(expr)
         if (!id) {
             const count = this.nextFunctionIndex++
             id = `@function(${count})` + (name ? `[${name}]` : '')
 
-            this.functionToID.set(expr, id)
+            this.functionToId.set(expr, id)
         }
 
         return id
     }
 
     /**
+     * Gets a function ID given an ID of one of its parameter.
+     */
+    getFunctionIdFromParamId(id: string): string | undefined {
+        return this.parameterToFunctionId.get(id)
+    }
+
+    /**
+     * Gets function info from a function ID, creating it if it doesn't exist.
+     */
+    getFunctionInfo(id: string): FunctionInfo {
+        let info = this.idToFunctionInfo.get(id)
+        if (info) {
+            return info
+        }
+
+        info = {
+            id,
+            parameters: [],
+            parameterNames: [],
+            parameterTypes: [],
+            returnTypes: [],
+            returnExpressions: [],
+        }
+
+        this.idToFunctionInfo.set(id, info)
+        return info
+    }
+
+    /**
+     * Gets the literal key to use for a table field mapping.
+     */
+    getLiteralKey(key: string, type?: LuaType) {
+        let internal: string | undefined
+        if (!type) {
+            internal = key
+        } else if (type === 'string') {
+            internal = readLuaStringLiteral(key)
+        }
+
+        if (!internal) {
+            return key
+        }
+
+        return '"' + internal.replaceAll('"', '\\"') + '"'
+    }
+
+    /**
+     * Gets a module given its name.
+     */
+    getModule(name: string, checkAliases = false): ResolvedModule | undefined {
+        let mod = this.modules.get(name)
+        if (!mod && checkAliases) {
+            let alias = this.aliasMap.get(name)
+            const firstAlias = alias ? [...alias][0] : undefined
+            if (firstAlias) {
+                mod = this.modules.get(firstAlias)
+            }
+        }
+
+        return mod
+    }
+
+    /**
      * Gets the ID to use for a table.
      */
-    getTableID(expr: ast.TableConstructorExpression, name?: string): string {
-        let id = this.tableToID.get(expr)
+    getTableId(expr: ast.TableConstructorExpression, name?: string): string {
+        let id = this.tableToId.get(expr)
         if (!id) {
-            id = this.newTableID(name)
-            this.tableToID.set(expr, id)
+            id = this.newTableId(name)
+            this.tableToId.set(expr, id)
         }
 
         return id
+    }
+
+    /**
+     * Gets table info from a table ID, creating it if it doesn't exist.
+     */
+    getTableInfo(id: string): TableInfo {
+        let info = this.idToTableInfo.get(id)
+        if (info) {
+            return info
+        }
+
+        info = {
+            id,
+            literalFields: [],
+            definitions: new Map(),
+            definingModule: this.currentModule,
+        }
+
+        this.idToTableInfo.set(id, info)
+        return info
+    }
+
+    /**
+     * Gets the types determined based on usage for an expression.
+     * Returns undefined if types couldn't be determined.
+     */
+    getUsageTypes(expr: LuaExpression): Set<string> | undefined {
+        const types = this.usageTypes.get(expr)
+        if (!types || types.size === 0 || types.size === 5) {
+            return
+        }
+
+        return types
     }
 
     /**
@@ -372,7 +477,7 @@ export class AnalysisContext {
                 continue
             }
 
-            this.addUsage(item, scope)
+            this.addUsage(item)
         }
 
         // resolve classes, functions, and returns
@@ -507,7 +612,7 @@ export class AnalysisContext {
                 ret.operator === 'call'
 
             if (isTailCall) {
-                const funcReturns = this.resolveFunctionReturnTypes(ret)
+                const funcReturns = this.typeResolver.resolveReturnTypes(ret)
                 if (funcReturns) {
                     fullReturnCount += funcReturns.length - 1
                     funcInfo.returnExpressions[i].add(ret)
@@ -525,9 +630,9 @@ export class AnalysisContext {
             }
 
             funcInfo.returnExpressions[i].add(ret)
-            this.remapBooleans(this.resolveTypes({ expression: ret })).forEach(
-                (x) => funcInfo.returnTypes[i].add(x),
-            )
+            this.remapBooleans(
+                this.typeResolver.resolve({ expression: ret }),
+            ).forEach((x) => funcInfo.returnTypes[i].add(x))
         }
 
         funcInfo.minReturns = Math.min(
@@ -649,9 +754,9 @@ export class AnalysisContext {
         }
 
         // get metatable type
-        const metaTypes = [...this.resolveTypes({ expression: meta })].filter(
-            (x) => !x.startsWith('@self'),
-        )
+        const metaTypes = [
+            ...this.typeResolver.resolve({ expression: meta }),
+        ].filter((x) => !x.startsWith('@self'))
 
         const resolvedMeta = metaTypes[0]
         if (metaTypes.length !== 1 || !resolvedMeta.startsWith('@table')) {
@@ -665,9 +770,9 @@ export class AnalysisContext {
         }
 
         // get lhs types
-        const lhsTypes = [...this.resolveTypes({ expression: lhs })].filter(
-            (x) => x !== '@instance',
-        )
+        const lhsTypes = [
+            ...this.typeResolver.resolve({ expression: lhs }),
+        ].filter((x) => x !== '@instance')
 
         if (lhsTypes.find((x) => !x.startsWith('@table'))) {
             // non-table lhs → don't treat as instance
@@ -778,7 +883,7 @@ export class AnalysisContext {
         literalInfo: TableInfo,
         base?: string,
     ): TableInfo {
-        const tableId = this.newTableID()
+        const tableId = this.newTableId()
         const info = this.getTableInfo(tableId)
         info.className = name
         info.isAtomUI = true
@@ -871,7 +976,7 @@ export class AnalysisContext {
             rhs = this.checkFieldCallAssign(scope, lhs, rhs)
         }
 
-        const types = this.resolveTypes({ expression: rhs })
+        const types = this.typeResolver.resolve({ expression: rhs })
         const tableId = types.size === 1 ? [...types][0] : undefined
         const fieldInfo = tableId?.startsWith('@table')
             ? this.getTableInfo(tableId)
@@ -1014,35 +1119,6 @@ export class AnalysisContext {
         })
     }
 
-    protected addKnownReturns(
-        expr: LuaExpression,
-        types: Set<string>,
-    ): boolean {
-        if (expr.type !== 'reference') {
-            return false
-        }
-
-        const name = expr.id
-        switch (name) {
-            case 'tonumber':
-                types.add('number')
-                types.add('nil')
-                return true
-
-            case 'getTextOrNull':
-                types.add('string')
-                types.add('nil')
-                return true
-
-            case 'tostring':
-            case 'getText':
-                types.add('string')
-                return true
-        }
-
-        return false
-    }
-
     protected addSeenClasses(scope: LuaScope, expression: LuaExpression) {
         switch (expression.type) {
             case 'literal':
@@ -1056,7 +1132,7 @@ export class AnalysisContext {
                 return
         }
 
-        const types = this.resolveTypes({ expression })
+        const types = this.typeResolver.resolve({ expression })
         if (types.size !== 1) {
             return
         }
@@ -1078,7 +1154,7 @@ export class AnalysisContext {
     /**
      * Adds information about the usage of an expression.
      */
-    protected addUsage(item: UsageItem, scope: LuaScope) {
+    protected addUsage(item: UsageItem) {
         let usageTypes = this.usageTypes.get(item.expression)
         if (!usageTypes) {
             usageTypes = new Set([
@@ -1133,7 +1209,9 @@ export class AnalysisContext {
         usageTypes.delete('string')
         usageTypes.delete('table')
 
-        const types = [...this.resolveTypes({ expression: item.expression })]
+        const types = [
+            ...this.typeResolver.resolve({ expression: item.expression }),
+        ]
 
         const id = types[0]
         if (types.length !== 1 || !id.startsWith('@function')) {
@@ -1146,9 +1224,9 @@ export class AnalysisContext {
         // add passed arguments to inferred parameter types
         for (let i = 0; i < item.arguments.length; i++) {
             parameterTypes[i] ??= new Set()
-            this.resolveTypes({ expression: item.arguments[i] }).forEach((x) =>
-                parameterTypes[i].add(x),
-            )
+            this.typeResolver
+                .resolve({ expression: item.arguments[i] })
+                .forEach((x) => parameterTypes[i].add(x))
         }
 
         // if arguments aren't passed for a parameter, add nil
@@ -1316,7 +1394,7 @@ export class AnalysisContext {
 
         // TableRef({ ... })
         const callBase = rhs.arguments[0]
-        const types = this.resolveTypes({ expression: callBase })
+        const types = this.typeResolver.resolve({ expression: callBase })
         const argId = [...types][0]
         if (types.size !== 1 || !argId.startsWith('@table')) {
             return
@@ -1349,7 +1427,7 @@ export class AnalysisContext {
         identExpr: LuaMember,
     ) {
         const base = identExpr.base
-        const types = this.resolveTypes({ expression: base })
+        const types = this.typeResolver.resolve({ expression: base })
         if (types.size !== 1) {
             return
         }
@@ -1396,7 +1474,7 @@ export class AnalysisContext {
             }
         }
 
-        const typeSet = this.resolveTypes({ expression: expr })
+        const typeSet = this.typeResolver.resolve({ expression: expr })
 
         // expect unambiguous type
         if (typeSet.size !== 1) {
@@ -1505,8 +1583,8 @@ export class AnalysisContext {
         }
 
         const tableId = classTable
-            ? this.getTableID(classTable)
-            : this.newTableID()
+            ? this.getTableId(classTable)
+            : this.newTableId()
 
         const tableInfo = this.getTableInfo(tableId)
         if (tableInfo.className) {
@@ -1520,7 +1598,7 @@ export class AnalysisContext {
             name = scope.localIdToName(base.id) ?? base.id
 
             // name collision → don't emit a class annotation for the container
-            const types = this.resolveTypes({ expression: base })
+            const types = this.typeResolver.resolve({ expression: base })
             const resolved = [...types][0]
             if (types.size === 1 && resolved.startsWith('@table')) {
                 const containerInfo = this.getTableInfo(resolved)
@@ -1555,7 +1633,7 @@ export class AnalysisContext {
 
         // mark the instance in the base class
         const resolvedBaseTypes = [
-            ...this.resolveTypes({
+            ...this.typeResolver.resolve({
                 expression: base,
             }),
         ]
@@ -1572,7 +1650,9 @@ export class AnalysisContext {
         }
 
         if (identExpr.indexer === ':') {
-            info.parameterTypes.push(this.resolveTypes({ expression: base }))
+            info.parameterTypes.push(
+                this.typeResolver.resolve({ expression: base }),
+            )
         }
 
         info.returnTypes.push(new Set([tableId]))
@@ -1624,7 +1704,7 @@ export class AnalysisContext {
 
         // resolve local variables for global classes
         if (id.startsWith('@')) {
-            const types = this.resolveTypes({ expression: base })
+            const types = this.typeResolver.resolve({ expression: base })
             const resolved = [...types][0]
             if (types.size !== 1 || !resolved.startsWith('@table')) {
                 return
@@ -1651,7 +1731,7 @@ export class AnalysisContext {
         const [base, deriveName] = this.checkDeriveCall(rhs) ?? []
         const name = base && this.getFieldClassName(scope, lhs)
         if (base && name) {
-            const newId = this.newTableID()
+            const newId = this.newTableId()
             const newInfo = this.getTableInfo(newId)
             newInfo.className = name
             newInfo.isLocalClass = true
@@ -1736,24 +1816,6 @@ export class AnalysisContext {
         return false
     }
 
-    /**
-     * Checks whether the given expression has already been seen.
-     * This will attempt to use known types, and will otherwise add `unknown`.
-     */
-    protected checkTypeResolutionCycle(
-        info: LuaExpressionInfo,
-        types: Set<string>,
-        seen: Map<LuaExpressionInfo, Set<string>>,
-    ): boolean {
-        const existing = seen.get(info)
-        if (!existing) {
-            return false
-        }
-
-        existing.forEach((x) => types.add(x))
-        return true
-    }
-
     protected finalizeClass(
         cls: ResolvedClassInfo,
         refs: Map<string, LuaExpression | null>,
@@ -1829,7 +1891,7 @@ export class AnalysisContext {
             }
 
             const valueTypes = this.finalizeTypes(
-                this.resolveTypes({ expression: value }),
+                this.typeResolver.resolve({ expression: value }),
             )
 
             if (valueTypes.size === 1 && valueTypes.has('function')) {
@@ -1931,7 +1993,9 @@ export class AnalysisContext {
                 const instanceTypes = new Set<string>()
 
                 for (const expr of instanceExprs) {
-                    this.resolveTypes(expr).forEach((x) => instanceTypes.add(x))
+                    this.typeResolver
+                        .resolve(expr)
+                        .forEach((x) => instanceTypes.add(x))
                 }
 
                 const types = this.finalizeTypes(instanceTypes)
@@ -2187,7 +2251,7 @@ export class AnalysisContext {
             // no defs, multiple defs, or failed reference resolution → resolve types
             types = new Set()
             for (const def of defs) {
-                this.resolveTypes(def).forEach((x) => types!.add(x))
+                this.typeResolver.resolve(def).forEach((x) => types!.add(x))
             }
 
             // no defs at module level → assume optional
@@ -2351,9 +2415,9 @@ export class AnalysisContext {
 
                 const types = new Set<string>()
                 for (const expr of expressions) {
-                    this.resolveTypes({ expression: expr }).forEach((x) =>
-                        types.add(x),
-                    )
+                    this.typeResolver
+                        .resolve({ expression: expr })
+                        .forEach((x) => types.add(x))
                 }
 
                 info.returnTypes[i].forEach((x) => types.add(x))
@@ -2413,7 +2477,9 @@ export class AnalysisContext {
         }
 
         for (const expr of ret.expressions) {
-            this.resolveTypes({ expression: expr }).forEach((x) => types.add(x))
+            this.typeResolver
+                .resolve({ expression: expr })
+                .forEach((x) => types.add(x))
         }
 
         return {
@@ -2428,7 +2494,7 @@ export class AnalysisContext {
     ): [LuaExpression | undefined, Set<string>] {
         const staticTypes = new Set<string>()
         for (const expr of expressions) {
-            this.resolveTypes(expr).forEach((x) => staticTypes.add(x))
+            this.typeResolver.resolve(expr).forEach((x) => staticTypes.add(x))
         }
 
         const moduleLevelDef = expressions.find((x) => !x.functionLevel)
@@ -2698,46 +2764,6 @@ export class AnalysisContext {
         return names.reverse().join('.')
     }
 
-    /**
-     * Gets function info from a function ID, creating it if it doesn't exist.
-     */
-    protected getFunctionInfo(id: string): FunctionInfo {
-        let info = this.idToFunctionInfo.get(id)
-        if (info) {
-            return info
-        }
-
-        info = {
-            id,
-            parameters: [],
-            parameterNames: [],
-            parameterTypes: [],
-            returnTypes: [],
-            returnExpressions: [],
-        }
-
-        this.idToFunctionInfo.set(id, info)
-        return info
-    }
-
-    /**
-     * Gets the literal key to use for a table field mapping.
-     */
-    protected getLiteralKey(key: string, type?: LuaType) {
-        let internal: string | undefined
-        if (!type) {
-            internal = key
-        } else if (type === 'string') {
-            internal = readLuaStringLiteral(key)
-        }
-
-        if (!internal) {
-            return key
-        }
-
-        return '"' + internal.replaceAll('"', '\\"') + '"'
-    }
-
     protected getReferences(mod: ResolvedModule): Set<string> {
         const stack: [LuaExpression, number][] = []
         for (const cls of mod.classes) {
@@ -2785,7 +2811,9 @@ export class AnalysisContext {
                     const count = refCount.get(id) ?? defaultRefs
                     refCount.set(id, count + 1)
 
-                    const resolvedTypes = this.resolveTypes({ expression })
+                    const resolvedTypes = this.typeResolver.resolve({
+                        expression,
+                    })
 
                     for (const resolved of resolvedTypes) {
                         if (!resolved.startsWith('@table')) {
@@ -2855,84 +2883,6 @@ export class AnalysisContext {
         return new Set([...refCount.entries()].map((x) => x[0]))
     }
 
-    /**
-     * Gets table info from a table ID, creating it if it doesn't exist.
-     */
-    protected getTableInfo(id: string): TableInfo {
-        let info = this.idToTableInfo.get(id)
-        if (info) {
-            return info
-        }
-
-        info = {
-            id,
-            literalFields: [],
-            definitions: new Map(),
-            definingModule: this.currentModule,
-        }
-
-        this.idToTableInfo.set(id, info)
-        return info
-    }
-
-    /**
-     * Gets the truthiness of a set of types.
-     * If the truth cannot be determined, returns `undefined`
-     * @param types
-     */
-    protected getTruthiness(types: Set<string>): boolean | undefined {
-        let hasTruthy = false
-        let hasFalsy = false
-
-        for (const type of types) {
-            if (type === 'boolean') {
-                // can't determine truthiness of `boolean`
-                hasTruthy = true
-                hasFalsy = true
-                break
-            }
-
-            if (type === 'false' || type === 'nil') {
-                hasFalsy = true
-            } else {
-                hasTruthy = true
-            }
-        }
-
-        if (hasTruthy === hasFalsy) {
-            return
-        } else {
-            return hasTruthy
-        }
-    }
-
-    /**
-     * Checks whether an expression is a literal or an
-     * operation containing only literals.
-     */
-    protected isLiteralOperation(expr: LuaExpression) {
-        if (expr.type === 'literal') {
-            return true
-        }
-
-        const stack: LuaExpression[] = [expr]
-        while (stack.length > 0) {
-            const expression = stack.pop()!
-
-            if (expression.type === 'operation') {
-                if (expression.operator === 'call') {
-                    return false
-                }
-
-                expression.arguments.forEach((x) => stack.push(x))
-            } else if (expression.type !== 'literal') {
-                return false
-            }
-        }
-
-        return true
-    }
-
     protected isLiteralClassTable(expr: LuaExpression) {
         if (expr.type !== 'literal' || expr.luaType !== 'table') {
             return
@@ -2947,44 +2897,7 @@ export class AnalysisContext {
         return info.className !== undefined
     }
 
-    /**
-     * Narrows possible expression types based on usage.
-     */
-    protected narrowTypes(expr: LuaExpression, types: Set<string>) {
-        // no narrowing necessary
-        if (types.size <= 1) {
-            return
-        }
-
-        // no narrowing is possible
-        const usage = this.usageTypes.get(expr)
-        if (!usage || usage.size === 0 || usage.size === 5) {
-            return
-        }
-
-        // filter possible types to narrowed types
-        const narrowed = [...types].filter((type) => {
-            if (type.startsWith('@function') && usage.has('function')) {
-                return true
-            } else if (type.startsWith('@table') && usage.has('table')) {
-                return true
-            } else if (usage.has(type)) {
-                return true
-            }
-
-            return false
-        })
-
-        // oops, too much narrowing
-        if (narrowed.length === 0) {
-            return
-        }
-
-        types.clear()
-        narrowed.forEach((x) => types.add(x))
-    }
-
-    protected newTableID(name?: string): string {
+    protected newTableId(name?: string): string {
         const count = this.nextTableIndex++
         return `@table(${count})` + (name ? `[${name}]` : '')
     }
@@ -3037,501 +2950,6 @@ export class AnalysisContext {
         // remove the empty table definition
         info.isEmptyClass = true
         defs.splice(0, defs.length)
-    }
-
-    /**
-     * Resolves an expression into a basic literal, if it can be determined
-     * to be resolvable to one.
-     */
-    protected resolveBasicLiteral(
-        expression: LuaExpression,
-        seen?: Map<LuaExpressionInfo, Set<string>>,
-    ): LuaLiteral | undefined {
-        const stack: LuaExpressionInfo[] = []
-
-        stack.push({ expression })
-
-        while (stack.length > 0) {
-            const info = stack.pop()!
-            const expr = info.expression
-
-            let key: string
-            let tableInfo: TableInfo
-            let fieldDefs: LuaExpressionInfo[] | undefined
-            switch (expr.type) {
-                case 'literal':
-                    if (
-                        expr.luaType !== 'table' &&
-                        expr.luaType !== 'function'
-                    ) {
-                        return expr
-                    }
-
-                    return
-
-                case 'reference':
-                    fieldDefs = this.definitions.get(expr.id)
-                    if (fieldDefs && fieldDefs.length === 1) {
-                        stack.push(fieldDefs[0])
-                    }
-
-                    break
-
-                case 'member':
-                    const memberBase = [
-                        ...this.resolveTypes({ expression: expr.base }),
-                    ]
-
-                    if (memberBase.length !== 1) {
-                        break
-                    }
-
-                    tableInfo = this.getTableInfo(memberBase[0])
-                    key = this.getLiteralKey(expr.member)
-                    fieldDefs = tableInfo.definitions.get(key) ?? []
-
-                    if (fieldDefs.length === 1) {
-                        stack.push(fieldDefs[0])
-                    }
-
-                    break
-
-                case 'index':
-                    const indexBase = [
-                        ...this.resolveTypes({ expression: expr.base }),
-                    ]
-
-                    if (indexBase.length !== 1) {
-                        break
-                    }
-
-                    const index = this.resolveBasicLiteral(expr.index, seen)
-
-                    if (!index || !index.literal) {
-                        break
-                    }
-
-                    tableInfo = this.getTableInfo(indexBase[0])
-                    key = this.getLiteralKey(index.literal, index.luaType)
-                    fieldDefs = tableInfo.definitions.get(key) ?? []
-
-                    if (fieldDefs.length === 1) {
-                        stack.push(fieldDefs[0])
-                    }
-
-                    break
-
-                case 'operation':
-                    const types = [
-                        ...this.resolveTypes({ expression: expr }, seen),
-                    ]
-
-                    if (types.length !== 1) {
-                        break
-                    }
-
-                    // only resolve known booleans
-                    if (types[0] === 'true' || types[0] === 'false') {
-                        return {
-                            type: 'literal',
-                            luaType: 'boolean',
-                            literal: types[0],
-                        }
-                    }
-
-                    break
-            }
-        }
-
-        return
-    }
-
-    /**
-     * Resolves the possible types of a table field.
-     * @param types The set of types for the base.
-     * @param scope The relevant scope.
-     * @param field A string representing the field.
-     * @param isIndex Whether this is an index operation. If it is, `field` will be interpreted as a literal key.
-     */
-    protected resolveFieldTypes(
-        types: Set<string>,
-        field: string,
-        isIndex: boolean = false,
-        seen?: Map<LuaExpressionInfo, Set<string>>,
-    ): Set<string> {
-        const fieldTypes = new Set<string>()
-        if (types.size === 0) {
-            return fieldTypes
-        }
-
-        for (const type of types) {
-            if (!type.startsWith('@table')) {
-                continue
-            }
-
-            const info = this.getTableInfo(type)
-            const literalKey = isIndex ? field : this.getLiteralKey(field)
-            const fieldDefs = info.definitions.get(literalKey) ?? []
-
-            for (const def of fieldDefs) {
-                this.resolveTypes(def, seen).forEach((x) => fieldTypes.add(x))
-            }
-        }
-
-        return fieldTypes
-    }
-
-    protected resolveFunctionReturnTypes(
-        op: LuaOperation,
-        seen?: Map<LuaExpressionInfo, Set<string>>,
-    ): Set<string>[] | undefined {
-        const func = op.arguments[0]
-        if (!func) {
-            return
-        }
-
-        const types: Set<string>[] = []
-        const knownTypes = new Set<string>()
-        if (this.addKnownReturns(func, knownTypes)) {
-            types.push(knownTypes)
-            return types
-        }
-
-        const resolvedFuncTypes = this.resolveTypes({ expression: func }, seen)
-        if (!resolvedFuncTypes || resolvedFuncTypes.size !== 1) {
-            return
-        }
-
-        const resolvedFunc = [...resolvedFuncTypes][0]
-        if (!resolvedFunc.startsWith('@function')) {
-            return
-        }
-
-        // handle constructors
-        const funcInfo = this.getFunctionInfo(resolvedFunc)
-        if (funcInfo.isConstructor) {
-            types.push(new Set())
-            types[0].add('@instance') // mark as an instance to correctly attribute fields
-            funcInfo.returnTypes[0]?.forEach((x) => types[0].add(x))
-            return types
-        }
-
-        for (let i = 0; i < funcInfo.returnTypes.length; i++) {
-            types.push(new Set(funcInfo.returnTypes[i]))
-        }
-
-        return types
-    }
-
-    /**
-     * Resolves the possible types for the result of an operation.
-     * @param op The operation expression.
-     * @param scope The relevant scope.
-     * @param index For call operations, this is used to determine which return type to use.
-     */
-    protected resolveOperationTypes(
-        op: LuaOperation,
-        seen?: Map<LuaExpressionInfo, Set<string>>,
-        index: number = 1,
-    ): Set<string> {
-        const types = new Set<string>()
-
-        let lhs: LuaExpression | undefined
-        let rhs: LuaExpression | undefined
-        let lhsTypes: Set<string> | undefined
-        let rhsTypes: Set<string> | undefined
-        let lhsTruthy: boolean | undefined
-
-        switch (op.operator) {
-            case 'call':
-                const returnTypes = this.resolveFunctionReturnTypes(op, seen)
-                if (returnTypes === undefined) {
-                    break
-                }
-
-                const returns = returnTypes[index - 1]
-                if (!returns) {
-                    types.add('nil')
-                    break
-                }
-
-                returns.forEach((x) => types.add(x))
-                break
-
-            case '..':
-                types.add('string')
-                break
-
-            case '~=':
-            case '==':
-            case '<':
-            case '<=':
-            case '>':
-            case '>=':
-                types.add('boolean')
-                break
-
-            case '+':
-            case '-':
-            case '*':
-            case '%':
-            case '^':
-            case '/':
-            case '//':
-            case '&':
-            case '|':
-            case '~':
-            case '<<':
-            case '>>':
-            case '#':
-                types.add('number')
-                break
-
-            case 'not':
-                const argTypes = this.resolveTypes(
-                    { expression: op.arguments[0] },
-                    seen,
-                )
-
-                const truthy = this.isLiteralOperation(op.arguments[0])
-                    ? this.getTruthiness(argTypes)
-                    : undefined
-
-                if (truthy === undefined) {
-                    // can't determine truthiness; use boolean
-                    types.add('boolean')
-                    break
-                } else {
-                    types.add(truthy ? 'false' : 'true')
-                    break
-                }
-
-            case 'or':
-                lhs = op.arguments[0]
-                rhs = op.arguments[1]
-
-                lhsTypes = this.resolveTypes({ expression: lhs }, seen)
-                rhsTypes = this.resolveTypes({ expression: rhs }, seen)
-
-                // X and Y or Z → use Y & Z (ternary special case)
-                if (lhs.type === 'operation' && lhs.operator === 'and') {
-                    lhsTypes = this.resolveTypes(
-                        { expression: lhs.arguments[1] },
-                        seen,
-                    )
-                }
-
-                lhsTruthy = this.isLiteralOperation(lhs)
-                    ? this.getTruthiness(lhsTypes)
-                    : undefined
-
-                rhsTypes.forEach((x) => types.add(x))
-
-                // lhs falsy → use only rhs types
-                if (lhsTruthy === false) {
-                    break
-                }
-
-                // lhs truthy or undetermined → use both
-                lhsTypes.forEach((x) => types.add(x))
-                break
-
-            case 'and':
-                lhs = op.arguments[0]
-                rhs = op.arguments[1]
-
-                lhsTypes = this.resolveTypes({ expression: lhs }, seen)
-                rhsTypes = this.resolveTypes({ expression: rhs }, seen)
-
-                lhsTruthy = this.isLiteralOperation(lhs)
-                    ? this.getTruthiness(lhsTypes)
-                    : undefined
-
-                if (lhsTruthy === true) {
-                    // lhs truthy → use rhs types
-                    rhsTypes.forEach((x) => types.add(x))
-                } else if (lhsTruthy === false) {
-                    // lhs falsy → use lhs types
-                    lhsTypes.forEach((x) => types.add(x))
-                } else {
-                    // undetermined → use both
-                    lhsTypes.forEach((x) => types.add(x))
-                    rhsTypes.forEach((x) => types.add(x))
-                }
-
-                break
-        }
-
-        return types
-    }
-
-    /**
-     * Resolves the potential types of an expression.
-     */
-    protected resolveTypes(
-        info: LuaExpressionInfo,
-        seen?: Map<LuaExpressionInfo, Set<string>>,
-    ): Set<string> {
-        seen ??= new Map()
-        const types = new Set<string>()
-
-        if (this.checkTypeResolutionCycle(info, types, seen)) {
-            return types
-        }
-
-        seen.set(info, new Set())
-
-        const expression = info.expression
-        let typesToAdd: Set<string>
-        switch (expression.type) {
-            case 'literal':
-                typesToAdd = new Set()
-                if (expression.literal === 'true') {
-                    typesToAdd.add('true')
-                } else if (expression.literal === 'false') {
-                    typesToAdd.add('false')
-                } else if (expression.tableId) {
-                    typesToAdd.add(expression.tableId)
-                } else if (expression.functionId) {
-                    typesToAdd.add(expression.functionId)
-                } else {
-                    typesToAdd.add(expression.luaType)
-                }
-
-                break
-
-            case 'operation':
-                typesToAdd = this.resolveOperationTypes(
-                    expression,
-                    seen,
-                    info.index,
-                )
-
-                break
-
-            case 'reference':
-                typesToAdd = new Set()
-                const id = expression.id
-                const isParam =
-                    id.startsWith('@parameter') || id.startsWith('@self')
-
-                // add IDs as types for later resolution
-                if (
-                    isParam ||
-                    id.startsWith('@function') ||
-                    id.startsWith('@instance')
-                ) {
-                    typesToAdd.add(id)
-                }
-
-                if (isParam) {
-                    const funcId = this.parameterToFunctionId.get(id)
-                    if (!funcId) {
-                        break
-                    }
-
-                    const funcInfo = this.getFunctionInfo(funcId)
-                    for (let i = 0; i < funcInfo.parameters.length; i++) {
-                        if (id !== funcInfo.parameters[i]) {
-                            continue
-                        }
-
-                        funcInfo.parameterTypes[i]?.forEach((x) =>
-                            typesToAdd.add(x),
-                        )
-
-                        break
-                    }
-                }
-
-                const defs = this.definitions.get(id)
-                if (!defs) {
-                    break
-                }
-
-                for (const def of defs) {
-                    this.resolveTypes(def, seen).forEach((x) =>
-                        typesToAdd.add(x),
-                    )
-                }
-
-                break
-
-            case 'member':
-                const memberBaseTypes = this.resolveTypes(
-                    { expression: expression.base, index: info.index },
-                    seen,
-                )
-
-                typesToAdd = this.resolveFieldTypes(
-                    memberBaseTypes,
-                    expression.member,
-                    false,
-                    seen,
-                )
-
-                break
-
-            case 'index':
-                const indexBaseTypes = this.resolveTypes(
-                    { expression: expression.base, index: info.index },
-                    seen,
-                )
-
-                const index = this.resolveBasicLiteral(expression.index, seen)
-
-                if (!index || !index.literal) {
-                    typesToAdd = new Set()
-                    break
-                }
-
-                const key = this.getLiteralKey(index.literal, index.luaType)
-                typesToAdd = this.resolveFieldTypes(
-                    indexBaseTypes,
-                    key,
-                    true,
-                    seen,
-                )
-
-                break
-
-            case 'require':
-                const moduleName = expression.module
-
-                // unknown → check for alias
-                let mod = this.modules.get(moduleName)
-                if (!mod) {
-                    let alias = this.aliasMap.get(moduleName)
-                    const firstAlias = alias ? [...alias][0] : undefined
-                    if (firstAlias) {
-                        mod = this.modules.get(firstAlias)
-                    }
-                }
-
-                // still unknown
-                if (!mod) {
-                    typesToAdd = new Set()
-                    break
-                }
-
-                const targetIdx = info.index ?? 1
-                typesToAdd = mod.returns[targetIdx - 1]?.types ?? new Set()
-
-                break
-        }
-
-        this.narrowTypes(expression, typesToAdd)
-
-        typesToAdd.forEach((x) => types.add(x))
-        seen.set(info, types)
-
-        if (types.has('true') && types.has('false')) {
-            types.delete('true')
-            types.delete('false')
-            types.add('boolean')
-        }
-
-        return types
     }
 
     protected tryAddPartialItem(
@@ -3591,7 +3009,7 @@ export class AnalysisContext {
             if (base) {
                 // if there's a derive call, return a table so fields aren't misattributed
 
-                const newId = this.newTableID()
+                const newId = this.newTableId()
                 const info = this.getTableInfo(newId)
                 info.fromHiddenClass = true
                 info.originalBase = base
@@ -3604,7 +3022,7 @@ export class AnalysisContext {
             return
         }
 
-        const tableId = !base ? this.checkClassTable(rhs) : this.newTableID()
+        const tableId = !base ? this.checkClassTable(rhs) : this.newTableId()
 
         // global table or derive call → class
         if (tableId) {
@@ -3648,7 +3066,9 @@ export class AnalysisContext {
         }
 
         // global function assignment
-        const rhsTypes = [...this.resolveTypes({ expression: item.rhs })]
+        const rhsTypes = [
+            ...this.typeResolver.resolve({ expression: item.rhs }),
+        ]
 
         if (rhsTypes.length !== 1) {
             return
